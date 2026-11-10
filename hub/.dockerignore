@@ -1,0 +1,7 @@
+.venv
+hub-data
+tests
+tools
+__pycache__
+.pytest_cache
+*.md

@@ -1,0 +1,17 @@
+configuration:
+  lan_admin:
+    name: Admin page on the LAN
+    description: >-
+      Also serve the admin page at http://<home-assistant>:8390/ to anyone on
+      your network, without a login. Off: only through Home Assistant's
+      sidebar.
+  mdns:
+    name: Advertise with mDNS
+    description: Let displays find the hub by themselves (_hadisplay._tcp).
+  advertise_ip:
+    name: Address to advertise
+    description: >-
+      The address displays should connect to. Leave blank to use the host's
+      LAN address; set it if the host has several.
+  log_level:
+    name: Log level

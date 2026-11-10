@@ -1,0 +1,25 @@
+# Push a tag like v0.3.0 to publish the firmware image with the release.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio esptool
+      - run: PIO=pio scripts/build-firmware.sh
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.bin --title "$GITHUB_REF_NAME" \
+            --notes "Firmware for the ESP32 Cheap Yellow Display: flash at 0x0 (see docs/install.md). The hub installs as a Home Assistant add-on from this repository."

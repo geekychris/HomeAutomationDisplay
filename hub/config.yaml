@@ -1,0 +1,32 @@
+# Home Assistant add-on: the display hub.
+name: Display Hub
+version: "0.3.0"
+slug: display_hub
+description: Wall-panel hub for ESP32 Cheap Yellow Display touchscreens - pick which entities each display shows.
+url: https://github.com/geekychris/HomeAutomationDisplay
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# Displays connect straight to the hub on port 8390, and find it by mDNS,
+# so the add-on lives on the host's network.
+host_network: true
+# A token for HA's WebSocket API, through the Supervisor.
+homeassistant_api: true
+# The admin page in HA's sidebar, behind HA's own login.
+ingress: true
+ingress_port: 8390
+panel_icon: mdi:tablet-dashboard
+panel_title: Displays
+options:
+  lan_admin: false
+  mdns: true
+  advertise_ip: ""
+  log_level: info
+schema:
+  lan_admin: bool
+  mdns: bool
+  advertise_ip: str?
+  log_level: list(debug|info|warning|error)

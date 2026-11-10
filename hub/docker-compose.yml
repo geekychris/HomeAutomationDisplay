@@ -1,0 +1,16 @@
+# The hub in Docker, next to a Home Assistant that has no add-on store
+# (HA Container, HA Core). Host networking, so displays can find it by mDNS.
+#
+#   cp .env.example .env    # then set HA_URL and HA_TOKEN
+#   docker compose up -d
+#   open http://<this machine>:8390/
+services:
+  had-hub:
+    build: .
+    image: had-hub
+    container_name: had-hub
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./hub-data:/app/hub-data

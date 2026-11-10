@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Display Hub</title>
+<style>
+:root {
+  --bg: #f4f2ee; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6760; --line: #e2ded6;
+  --accent: #c27c0e; --accent-ink: #ffffff; --good: #2e7d4f; --warn: #b7791f; --bad: #c0392b;
+  --chip: #efebe3; --input: #faf9f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514; --panel: #201f1d; --ink: #ece9e3; --muted: #9d978c; --line: #34322e;
+    --accent: #f0a42b; --accent-ink: #1d1c1a; --good: #5cc28a; --warn: #f0b44c; --bad: #ef6b5b;
+    --chip: #2b2926; --input: #191817;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+header .spacer { flex: 1; }
+a { color: var(--accent); }
+main { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px; align-items: start; }
+@media (max-width: 1100px) { main { grid-template-columns: 220px minmax(0, 1fr); } #house { grid-column: 1 / -1; } }
+@media (max-width: 700px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.primary:disabled { opacity: .45; cursor: default; }
+button.icon { padding: 2px 7px; }
+input, select { background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
+.dot.on { background: var(--good); }
+#displays { list-style: none; margin: 0; padding: 0; }
+#displays li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+#displays li:hover { background: var(--chip); }
+#displays li.sel { background: var(--chip); outline: 1px solid var(--line); }
+#displays .who { min-width: 0; }
+#displays .who div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.page { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 12px; }
+.tile { display: grid; grid-template-columns: 22px minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.tile:first-of-type { border-top: 0; }
+.tile .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.tile .opts input { width: 100%; }
+.tile .opts input.num { width: 64px; }
+@media (max-width: 700px) { .tile { grid-template-columns: 22px minmax(0, 1fr) auto; } .tile .opts { grid-column: 2 / -1; grid-row: 2; } }
+.kind { font-size: 15px; text-align: center; }
+.ent div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { padding: 24px; text-align: center; color: var(--muted); }
+#msg { min-height: 1.4em; }
+#msg.err { color: var(--bad); }
+.ent-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+.ent-row:first-child { border-top: 0; }
+.ent-row .ctl { display: flex; gap: 6px; align-items: center; }
+.ent-row input[type=range] { width: 90px; }
+.val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.lvl1 { color: var(--good); } .lvl2 { color: var(--warn); } .lvl3 { color: var(--bad); }
+.toggle { min-width: 46px; }
+.toggle.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.group { font-size: 12px; color: var(--muted); margin: 12px 0 2px; text-transform: capitalize; }
+#ha { display: none; padding: 8px 20px; background: var(--bad); color: #fff; font-size: 13px; }
+#ha.show { display: block; }
+#filter { width: 100%; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Display Hub</h1>
+  <span class="badge" id="backend">…</span>
+  <span class="spacer"></span>
+  <a href="virtual" target="_blank" rel="noopener">Open a virtual display ↗</a>
+</header>
+<div id="ha"></div>
+<main>
+  <section class="panel">
+    <h2>Displays</h2>
+    <ul id="displays"></ul>
+    <p class="small muted" id="nodisplays">No displays yet. Turn one on (it finds the hub by itself), or open a virtual display.</p>
+  </section>
+
+  <section class="panel" id="editor"><div class="empty">Pick a display on the left.</div></section>
+
+  <section class="panel" id="house">
+    <h2 id="house-title">House</h2>
+    <input id="filter" type="search" placeholder="Filter by name, area or entity id">
+    <div id="entities"></div>
+  </section>
+</main>
+
+<script>
+const KIND_ICON = { light: "💡", switch: "⏻", sensor: "📈", climate: "🌡", button: "▶" };
+const DOMAIN_ICON = { fan: "🌀", cover: "🪟", lock: "🔒", automation: "⚙", person: "🧍", weather: "⛅", scene: "🎬", script: "📜" };
+const iconOf = e => DOMAIN_ICON[e?.domain] || KIND_ICON[e?.kind] || "?";
+// Relative to the page, so the hub works behind Home Assistant's ingress (/api/hassio_ingress/<token>/).
+const BASE = location.pathname.replace(/[^/]*$/, "");
+const $ = (s, el = document) => el.querySelector(s);
+const h = (tag, props = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else if (v !== undefined && v !== null && v !== false) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) el.append(kid);
+  return el;
+};
+
+let info = null, entities = {}, displays = [], selected = null, draft = null, dirty = false;
+
+async function api(method, url, body) {
+  const r = await fetch(url.replace(/^\//, ""), { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.err || r.statusText);
+  return j;
+}
+
+// ------------------------------------------------------------ state text
+function describe(e) {
+  if (!e) return "not found";
+  const a = e.attributes;
+  if (["unavailable", "unknown"].includes(e.state)) return e.state;
+  if (e.domain === "light") return e.state === "on" && a.brightness !== undefined ? `on · ${Math.round(a.brightness * 100 / 255)}%` : e.state;
+  if (e.domain === "fan") return e.state === "on" && a.percentage ? `on · ${a.percentage}%` : e.state;
+  if (e.domain === "cover") return a.current_position !== undefined ? `${e.state} · ${a.current_position}%` : e.state;
+  if (e.domain === "weather") return `${e.state} · ${a.temperature}${a.temperature_unit || ""}`;
+  if (e.kind === "climate") return `${e.state} · ${a.current_temperature}° → ${a.temperature}° (${a.hvac_action})`;
+  if (e.kind === "sensor") return `${e.state}${a.unit_of_measurement ? " " + a.unit_of_measurement : ""}`;
+  return e.state;
+}
+const nameOf = id => entities[id]?.attributes.friendly_name || id;
+const areaOf = id => entities[id]?.attributes.area || "";
+
+// ------------------------------------------------------------ display list
+function renderDisplays() {
+  const ul = $("#displays");
+  ul.replaceChildren(...displays.map(d => h("li", { class: d.id === selected ? "sel" : "", onclick: () => select(d.id) },
+    h("span", { class: "dot" + (d.online ? " on" : ""), title: d.online ? "connected" : "offline" }),
+    h("div", { class: "who" },
+      h("div", {}, d.name || d.info?.name || d.id),
+      h("div", { class: "small muted" }, `${d.id} · ${d.online ? "online" : seen(d.last_seen)}`)))));
+  $("#nodisplays").hidden = displays.length > 0;
+}
+function seen(t) {
+  if (!t) return "never seen";
+  const s = Date.now() / 1000 - t;
+  return s < 120 ? "seen just now" : s < 7200 ? `seen ${Math.round(s / 60)} min ago` : `seen ${new Date(t * 1000).toLocaleString()}`;
+}
+
+function select(id) {
+  if (dirty && id !== selected && !confirm("Discard unsaved changes to this display?")) return;
+  selected = id;
+  const d = displays.find(x => x.id === id);
+  draft = d ? structuredClone({ name: d.name, pages: d.pages }) : null;
+  dirty = false;
+  renderDisplays();
+  renderEditor();
+}
+
+// ------------------------------------------------------------ editor
+function change() { dirty = true; $("#save").disabled = false; }
+
+function renderEditor() {
+  const box = $("#editor");
+  const d = displays.find(x => x.id === selected);
+  if (!d || !draft) { box.replaceChildren(h("div", { class: "empty" }, "Pick a display on the left.")); return; }
+  const total = draft.pages.reduce((n, p) => n + p.tiles.length, 0);
+  const others = displays.filter(x => x.id !== d.id && x.pages.length);
+  box.replaceChildren(
+    h("h2", {}, "Layout"),
+    h("div", { class: "row" },
+      h("input", { value: draft.name, placeholder: d.info?.name || "Name this display", style: "flex:1;min-width:160px",
+        oninput: e => { draft.name = e.target.value; change(); } }),
+      h("button", { onclick: identify, disabled: !d.online, title: "Show the display's id on its screen for 10 s" }, "Identify"),
+      h("button", { onclick: remove, title: "Forget this display" }, "Forget")),
+    h("p", { class: "small muted" },
+      `${d.id} · ${d.info?.name || ""} · ${d.info?.ip || "no address yet"} · firmware ${d.info?.fw || "?"} · ${total}/${info.limits.tiles} tiles`),
+    ...draft.pages.map((p, pi) => renderPage(p, pi)),
+    h("div", { class: "row", style: "margin-top:12px" },
+      h("button", { onclick: addPage, disabled: draft.pages.length >= info.limits.pages }, "+ Page"),
+      others.length ? h("select", { onchange: e => { copyFrom(e.target.value); e.target.value = ""; } },
+        h("option", { value: "" }, "Copy layout from…"),
+        ...others.map(o => h("option", { value: o.id }, o.name || o.id))) : null,
+      h("span", { style: "flex:1" }),
+      h("span", { id: "msg", class: "small" }),
+      h("button", { id: "save", class: "primary", onclick: save, disabled: !dirty }, "Save to display")));
+}
+
+function renderPage(p, pi) {
+  const used = new Set(p.tiles.map(t => t.entity));
+  const groups = {};
+  const hasAreas = Object.values(entities).some(e => e.attributes.area);
+  for (const e of Object.values(entities))
+    if (!used.has(e.entity_id)) (groups[hasAreas ? (e.attributes.area || "No area") : e.domain] ||= []).push(e);
+  const full = p.tiles.length >= info.limits.tiles_per_page;
+  return h("div", { class: "page" },
+    h("div", { class: "row" },
+      h("input", { value: p.name, maxlength: info.limits.page_name, style: "flex:1", oninput: e => { p.name = e.target.value; change(); } }),
+      h("button", { class: "icon", title: "Move page up", disabled: pi === 0, onclick: () => movePage(pi, -1) }, "↑"),
+      h("button", { class: "icon", title: "Remove page", onclick: () => { draft.pages.splice(pi, 1); change(); renderEditor(); } }, "✕")),
+    p.tiles.length ? null : h("p", { class: "small muted" }, "No tiles on this page yet."),
+    ...p.tiles.map((t, ti) => renderTile(p, t, ti)),
+    h("div", { class: "row", style: "margin-top:8px" },
+      h("select", { disabled: full, onchange: e => { if (e.target.value) { p.tiles.push({ entity: e.target.value }); change(); renderEditor(); } } },
+        h("option", { value: "" }, full ? `Page full (${info.limits.tiles_per_page} tiles)` : "+ Add a tile…"),
+        ...Object.entries(groups).sort().map(([k, list]) => h("optgroup", { label: k },
+          ...list.sort((x, y) => nameOf(x.entity_id).localeCompare(nameOf(y.entity_id)))
+            .map(e => h("option", { value: e.entity_id }, `${iconOf(e)} ${nameOf(e.entity_id)} — ${e.entity_id}`)))))));
+}
+
+function renderTile(p, t, ti) {
+  const e = entities[t.entity];
+  const kind = e?.kind || t.entity.split(".")[0];
+  const area = areaOf(t.entity);
+  const field = (key, ph, cls) => h("input", { class: cls, value: t[key] ?? "", placeholder: ph, title: ph,
+    oninput: ev => { if (ev.target.value === "") delete t[key]; else t[key] = ev.target.value; change(); } });
+  return h("div", { class: "tile" },
+    h("span", { class: "kind", title: kind }, iconOf(e)),
+    h("div", { class: "ent" },
+      h("div", {}, nameOf(t.entity) + (area ? ` · ${area}` : "")),
+      h("div", { class: "small muted", "data-state": t.entity }, `${t.entity} · ${describe(e)}`)),
+    h("div", { class: "opts" },
+      field("name", "Label on screen"),
+      kind === "sensor" ? field("warn", "Warn ≥", "num") : null,
+      kind === "sensor" ? field("bad", "Bad ≥", "num") : null),
+    h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" },
+      h("button", { class: "icon", title: "Move up", disabled: ti === 0, onclick: () => { [p.tiles[ti - 1], p.tiles[ti]] = [p.tiles[ti], p.tiles[ti - 1]]; change(); renderEditor(); } }, "↑"),
+      h("button", { class: "icon", title: "Remove", onclick: () => { p.tiles.splice(ti, 1); change(); renderEditor(); } }, "✕")));
+}
+
+function addPage() { draft.pages.push({ name: `Page ${draft.pages.length + 1}`, tiles: [] }); change(); renderEditor(); }
+function movePage(i, by) { const [p] = draft.pages.splice(i, 1); draft.pages.splice(i + by, 0, p); change(); renderEditor(); }
+function copyFrom(id) {
+  const src = displays.find(x => x.id === id);
+  if (!src) return;
+  draft.pages = structuredClone(src.pages); change(); renderEditor();
+}
+function say(text, err) { const m = $("#msg"); if (m) { m.textContent = text; m.className = "small" + (err ? " err" : ""); } }
+
+async function save() {
+  try {
+    await api("PUT", `/api/displays/${selected}`, draft);
+    dirty = false;
+    say("Saved — the display has it.");
+    $("#save").disabled = true;
+  } catch (err) { say(err.message, true); }
+}
+async function identify() {
+  try { await api("POST", `/api/displays/${selected}/identify`); say("Look for the display showing its id."); }
+  catch (err) { say(err.message, true); }
+}
+async function remove() {
+  if (!confirm("Forget this display and its layout? If it is on, it will show “not set up” again.")) return;
+  await api("DELETE", `/api/displays/${selected}`);
+  selected = null; draft = null; dirty = false;
+}
+
+// ------------------------------------------------------------ the house
+// With a real house there can be hundreds of entities: show them filtered,
+// and at most HOUSE_MAX rows.
+const HOUSE_MAX = 150;
+function matches(e, q) {
+  if (!q) return true;
+  return [e.entity_id, nameOf(e.entity_id), areaOf(e.entity_id)].some(x => x.toLowerCase().includes(q));
+}
+function renderEntities() {
+  const box = $("#entities");
+  const q = $("#filter").value.trim().toLowerCase();
+  const groups = {};
+  const shown = Object.values(entities).filter(e => matches(e, q))
+    .sort((a, b) => nameOf(a.entity_id).localeCompare(nameOf(b.entity_id)));
+  for (const e of shown.slice(0, HOUSE_MAX)) (groups[e.kind] ||= []).push(e);
+  const names = { light: "Lights, fans and covers", switch: "Switches and locks", climate: "Climate", sensor: "Sensors", button: "Scenes, scripts and buttons" };
+  box.replaceChildren(...["light", "switch", "climate", "button", "sensor"].filter(k => groups[k]).flatMap(k => [
+    h("div", { class: "group" }, names[k]),
+    ...groups[k].map(e => h("div", { class: "ent-row", id: "ent-" + e.entity_id })) ]),
+    shown.length > HOUSE_MAX ? h("p", { class: "small muted" }, `${shown.length - HOUSE_MAX} more — filter to find them.`) : null,
+    shown.length ? null : h("p", { class: "small muted" }, Object.keys(entities).length ? "Nothing matches." : "No entities yet."));
+  for (const g of Object.values(groups)) for (const e of g) renderEntity(e);
+}
+
+function renderEntity(e) {
+  const row = document.getElementById("ent-" + e.entity_id);
+  if (!row) return;
+  // Leave a control alone while someone is dragging it.
+  if (row.contains(document.activeElement) && document.activeElement.type === "range") return;
+  const a = e.attributes, on = ["on", "open", "opening", "locked"].includes(e.state);
+  const act = (action, v) => api("POST", `/api/entities/${e.entity_id}/action`, { a: action, v }).catch(err => alert(err.message));
+  let ctl;
+  if (e.kind === "light" || e.kind === "switch") {
+    const level = e.domain === "light" ? ((a.supported_color_modes || []).some(m => m !== "onoff") ? Math.round((a.brightness || 0) * 100 / 255) : null)
+      : e.domain === "fan" ? ((a.supported_features & 1) ? (a.percentage || 0) : null)
+      : e.domain === "cover" ? ((a.supported_features & 4) ? (a.current_position ?? 0) : null) : null;
+    const word = e.domain === "cover" ? e.state : e.domain === "lock" ? e.state : on ? "On" : "Off";
+    ctl = h("div", { class: "ctl" },
+      level !== null ? h("input", { type: "range", min: 0, max: 100, value: on ? level : 0,
+        onchange: ev => act("bri", +ev.target.value) }) : null,
+      h("button", { class: "toggle" + (on ? " on" : ""), onclick: () => act("toggle") }, word));
+  } else if (e.kind === "button") {
+    ctl = h("div", { class: "ctl" }, h("button", { onclick: () => act("press") }, e.domain === "scene" ? "Activate" : e.state === "on" ? "Running" : "Run"));
+  } else if (e.kind === "climate") {
+    const step = a.target_temp_step || 0.5;
+    ctl = h("div", { class: "ctl" },
+      h("button", { class: "icon", onclick: () => act("target", a.temperature - step) }, "−"),
+      h("span", { class: "val" }, `${a.temperature}°`),
+      h("button", { class: "icon", onclick: () => act("target", a.temperature + step) }, "+"),
+      h("select", { onchange: ev => act("mode", ev.target.value) },
+        ...a.hvac_modes.map(m => h("option", { value: m, selected: m === e.state }, m))));
+  } else {
+    const lvl = levelOf(e);
+    ctl = h("div", { class: "ctl" },
+      info.backend === "mock" && e.entity_id.startsWith("sensor.")
+        ? h("input", { class: "val " + (lvl ? "lvl" + lvl : ""), value: e.state, size: 5, title: "Mock: type a reading",
+            onchange: ev => api("POST", `/api/mock/${e.entity_id}`, { state: ev.target.value }) })
+        : h("span", { class: "val" }, e.state),
+      h("span", { class: "muted small" }, a.unit_of_measurement || ""));
+  }
+  row.replaceChildren(
+    h("span", { class: "kind" }, iconOf(e)),
+    h("div", { class: "ent" }, h("div", {}, nameOf(e.entity_id)),
+      h("div", { class: "small muted" }, (e.kind === "climate" ? `${a.current_temperature}° now · ${a.hvac_action}` : e.entity_id) + (a.area ? ` · ${a.area}` : ""))),
+    ctl);
+}
+
+// The same thresholds as the hub (entities.DEFAULT_LEVELS); warn > bad means lower is worse.
+const LEVELS = { carbon_dioxide: [1000, 1500], carbon_monoxide: [9, 35], volatile_organic_compounds_parts: [220, 660],
+  volatile_organic_compounds: [300, 1000], pm25: [12, 35], pm10: [54, 154], aqi: [51, 151], battery: [20, 10] };
+function levelOf(e) {
+  const t = LEVELS[e.attributes.device_class], v = parseFloat(e.state);
+  if (!t || isNaN(v)) return 0;
+  if (t[0] > t[1]) return v <= t[1] ? 3 : v <= t[0] ? 2 : 1;
+  return v >= t[1] ? 3 : v >= t[0] ? 2 : 1;
+}
+
+// ------------------------------------------------------------ live feed
+function connectLive() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${BASE}api/live`);
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.t === "displays") {
+      displays = m.displays;
+      if (selected && !displays.find(d => d.id === selected)) { selected = null; draft = null; dirty = false; }
+      renderDisplays();
+      if (!dirty) select(selected);       // with unsaved edits, leave the editor alone
+    } else if (m.t === "entity") {
+      const isNew = !entities[m.entity.entity_id];
+      entities[m.entity.entity_id] = m.entity;
+      if (isNew) renderEntities(); else renderEntity(m.entity);
+      for (const el of document.querySelectorAll(`[data-state="${m.entity.entity_id}"]`)) el.textContent = `${m.entity.entity_id} · ${describe(m.entity)}`;
+    }
+  };
+  ws.onclose = () => setTimeout(connectLive, 2000);
+}
+
+function showStatus() {
+  const ha = $("#ha");
+  $("#backend").textContent = (info.backend === "mock" ? "mock house" : info.backend === "homeassistant" ? "Home Assistant" : info.backend)
+    + ` · hub ${info.version}`;
+  ha.textContent = info.status.connected ? "" : `Not connected to Home Assistant: ${info.status.detail}. Displays show the last known state.`;
+  ha.classList.toggle("show", !info.status.connected);
+}
+async function loadEntities() {
+  entities = {};
+  for (const e of await api("GET", "/api/entities")) entities[e.entity_id] = e;
+  renderEntities();
+}
+(async () => {
+  info = await api("GET", "/api/info");
+  showStatus();
+  $("#house-title").textContent = info.backend === "mock" ? "Mock house" : "House";
+  $("#filter").addEventListener("input", renderEntities);
+  await loadEntities();
+  connectLive();
+  // Home Assistant can come and go (restarts, updates): keep the banner true,
+  // and reload the entity list when it comes back.
+  setInterval(async () => {
+    const was = info.status.connected;
+    try { info = await api("GET", "/api/info"); } catch { return; }
+    showStatus();
+    if (info.status.connected && !was) loadEntities();
+  }, 10000);
+})();
+window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
+</script>
+</body>
+</html>

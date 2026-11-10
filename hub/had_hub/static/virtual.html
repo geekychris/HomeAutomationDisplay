@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Display</title>
+<style>
+/* The panel itself is always dark, like the real screen; the page around it follows the system. */
+:root { --page: #ece9e3; --page-ink: #1d1c1a; --page-muted: #6b6760; --frame: #e3c13b; }
+@media (prefers-color-scheme: dark) { :root { --page: #121110; --page-ink: #ece9e3; --page-muted: #9d978c; --frame: #b89a22; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--page); color: var(--page-ink); font: 14px/1.4 system-ui, sans-serif;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
+.frame { background: var(--frame); padding: 18px 26px; border-radius: 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
+.scaler { width: calc(320px * var(--s)); height: calc(240px * var(--s)); --s: 2; }
+@media (max-width: 760px) { .scaler { --s: 1; } }
+#screen { width: 320px; height: 240px; transform: scale(var(--s)); transform-origin: 0 0; overflow: hidden; position: relative;
+  background: #15171a; color: #f0f0f0; font: 14px/1.2 Montserrat, system-ui, sans-serif; user-select: none; }
+.bar { height: 30px; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: #22262b; }
+.bar button { background: none; border: 0; color: #f5a623; font-size: 18px; width: 26px; height: 26px; cursor: pointer; padding: 0; }
+.bar button:disabled { color: transparent; }
+.bar .title { flex: 1; text-align: center; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .clock { font-variant-numeric: tabular-nums; color: #bbb; font-size: 12px; }
+.bar .net { width: 8px; height: 8px; border-radius: 50%; background: #c0392b; margin-left: 4px; }
+.bar .net.ok { background: #3fb950; }
+.grid { height: 210px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; align-content: flex-start; scrollbar-width: none; }
+.msg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; color: #aaa; white-space: pre-line; padding: 10px; }
+.tile { width: 151px; height: 99px; border-radius: 8px; background: #2a2f35; padding: 8px; position: relative; cursor: pointer; display: flex; flex-direction: column; }
+.tile.wide { width: 308px; }
+.tile.on { background: #5a4313; }
+.tile.button.flash { background: #8a6a1a; }
+.tile.na { opacity: .45; }
+.tile .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 22px; }
+.tile .sub { font-size: 12px; color: #bbb; margin-top: 2px; }
+.tile .pwr { position: absolute; top: 7px; right: 8px; color: #888; }
+.tile.on .pwr { color: #f5a623; }
+.tile input[type=range] { position: absolute; left: 10px; right: 10px; bottom: 10px; width: 131px; accent-color: #f5a623; }
+.sw { position: absolute; right: 10px; bottom: 10px; width: 50px; height: 26px; border-radius: 13px; background: #555; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #ddd; transition: left .15s; }
+.tile.on .sw { background: #f5a623; } .tile.on .sw::after { left: 27px; }
+.sensor .name { font-size: 12px; color: #bbb; font-weight: 400; padding: 0; }
+.sensor .v { font-size: 28px; font-weight: 600; margin-top: 8px; }
+.sensor .u { font-size: 14px; color: #bbb; margin-left: 3px; font-weight: 400; }
+.sensor .lv { font-size: 12px; margin-top: 2px; }
+.l1 { color: #3fb950; } .l2 { color: #f5a623; } .l3 { color: #ef5350; }
+.climate { flex-direction: row; cursor: default; }
+.climate .left { flex: 1; }
+.climate .left .name { font-size: 12px; color: #bbb; font-weight: 400; }
+.climate .cur { font-size: 28px; font-weight: 600; margin-top: 6px; }
+.climate .act { font-size: 12px; color: #bbb; }
+.climate .act.heating { color: #f5a623; }
+.climate .right { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 150px; }
+.climate .set { display: flex; align-items: center; gap: 6px; }
+.climate .set button, .climate .mode { background: #3a4048; color: #fff; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+.climate .set button { width: 36px; height: 36px; font-size: 20px; }
+.climate .tgt { font-size: 20px; width: 62px; text-align: center; font-variant-numeric: tabular-nums; }
+.climate .mode { width: 120px; height: 28px; }
+.climate .mode.heat { background: #8a5a12; }
+.overlay { position: absolute; inset: 0; background: rgb(10 10 10 / .92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.overlay .big { font-size: 28px; font-weight: 700; color: #f5a623; }
+.toast { position: absolute; left: 10px; right: 10px; bottom: 8px; background: #7a2a22; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; color: var(--page-muted); }
+.controls input { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid #8884; background: transparent; color: var(--page-ink); width: 140px; }
+.controls button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: var(--page-ink); cursor: pointer; }
+a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="frame"><div class="scaler"><div id="screen"></div></div></div>
+<div class="controls">
+  <label>Display id <input id="vid"></label>
+  <button id="go">Reconnect</button>
+  <span id="state">…</span>
+  <a href="./" target="_blank" rel="noopener">Hub admin ↗</a>
+</div>
+<script>
+// A display in a browser tab. Speaks the same protocol as the firmware
+// (docs/protocol.md) and draws the same screen, so layouts can be built and
+// tried without hardware. Several tabs with different ids act as several displays.
+const LEVEL = ["", "Good", "Fair", "Poor"];
+const MODE_NAME = { off: "Off", heat: "Heat", cool: "Cool", auto: "Auto", heat_cool: "Auto", dry: "Dry", fan_only: "Fan" };
+const ICON = { fan: "✣", cover: "⇕", bell: "🔔", lock: "🔒", play: "▶" };
+const screen = document.getElementById("screen");
+const params = new URLSearchParams(location.search);
+let id = params.get("id");
+if (!id) {
+  try { id = localStorage.getItem("vid"); } catch {}
+  if (!id) id = "virtual-" + Math.random().toString(16).slice(2, 8);
+}
+try { localStorage.setItem("vid", id); } catch {}
+document.getElementById("vid").value = id;
+
+let ws = null, layout = null, states = {}, page = 0, status = "connecting", identifyUntil = 0, toast = null;
+const pending = {};   // entity -> {tgt, timer}: a target set here, not yet sent
+
+function connect() {
+  if (ws) ws.close();
+  states = {}; layout = null; status = "connecting";
+  // Relative to the page, so it also works behind Home Assistant's ingress.
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${location.pathname.replace(/[^/]*$/, "")}ws`);
+  ws.onopen = () => { status = "waiting for layout"; ws.send(JSON.stringify({ t: "hello", id, name: id, fw: "virtual", proto: 1, w: 320, h: 240 })); draw(); };
+  ws.onmessage = ev => on(JSON.parse(ev.data));
+  ws.onclose = () => { status = "hub offline"; layout = null; draw(); setTimeout(() => { if (ws.readyState === 3) connect(); }, 3000); };
+  draw();
+}
+function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+function act(e, a, v) { send(v === undefined ? { t: "act", e, a } : { t: "act", e, a, v }); }
+
+function on(m) {
+  if (m.t === "layout") { layout = m; status = "ready"; if (page >= m.pages.length) page = 0; }
+  else if (m.t === "state") { if (pending[m.e]) m.tgt = pending[m.e].tgt; states[m.e] = m; }
+  else if (m.t === "identify") { identifyUntil = Date.now() + (m.s || 10) * 1000; setTimeout(draw, (m.s || 10) * 1000 + 50); }
+  else if (m.t === "error") { toast = m.msg; setTimeout(() => { toast = null; draw(); }, 3000); }
+  draw();
+}
+
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+function draw() {
+  // Leave the screen alone while a slider is being dragged.
+  if (document.activeElement?.type === "range" && document.activeElement.dataset.drag) return;
+  document.getElementById("state").textContent = status;
+  const bar = el("div", "bar");
+  const pages = layout?.pages || [];
+  const prev = el("button", "", "‹"), next = el("button", "", "›");
+  prev.disabled = pages.length < 2; next.disabled = pages.length < 2;
+  prev.onclick = () => { page = (page + pages.length - 1) % pages.length; draw(); };
+  next.onclick = () => { page = (page + 1) % pages.length; draw(); };
+  const title = pages.length > 1 ? pages[page].n : (layout?.title || id);
+  const now = new Date();
+  bar.append(prev, el("div", "title", title), next,
+    el("span", "clock", `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`),
+    el("span", "net" + (status === "ready" ? " ok" : "")));
+  const grid = el("div", "grid");
+  if (!layout || !pages.length) {
+    grid.append(el("div", "msg", layout?.msg || (status === "hub offline" ? "Hub not reachable.\nRetrying…" : "Connecting to the hub…")));
+  } else {
+    for (const t of pages[page].tiles) grid.append(tile(t, states[t.e] || { ok: false }));
+  }
+  const kids = [bar, grid];
+  if (Date.now() < identifyUntil) {
+    const o = el("div", "overlay");
+    o.append(el("div", "", "This is"), el("div", "big", id), el("div", "", layout?.title || ""));
+    o.onclick = () => { identifyUntil = 0; draw(); };
+    kids.push(o);
+  }
+  if (toast) kids.push(el("div", "toast", toast));
+  const scroll = screen.querySelector(".grid")?.scrollTop || 0;
+  screen.replaceChildren(...kids);
+  grid.scrollTop = scroll;
+}
+
+function tile(t, s) {
+  const d = el("div", "tile");
+  if (!s.ok) d.classList.add("na");
+  if (t.k === "light" || t.k === "switch") {
+    if (s.on) d.classList.add("on");
+    d.append(el("div", "name", t.n), el("div", "pwr", ICON[t.ic] || "⏻"));
+    // The hub's own words (covers, locks...) when it sends them.
+    const sub = !s.ok ? "unavailable" : s.txt ? s.txt : s.on ? (t.dim ? `On · ${s.bri}%` : "On") : "Off";
+    d.append(el("div", "sub", sub));
+    if (s.ok) d.onclick = () => { s.on = !s.on; if (s.on && t.dim && !s.bri) s.bri = 100; draw(); act(t.e, "toggle"); };
+    if (t.k === "light" && t.dim) {
+      const r = el("input"); r.type = "range"; r.min = 0; r.max = 100; r.value = s.on ? s.bri : 0; r.disabled = !s.ok;
+      r.onclick = ev => ev.stopPropagation();
+      r.onpointerdown = () => { r.dataset.drag = 1; };
+      r.oninput = () => { d.querySelector(".sub").textContent = `${r.value}%`; };
+      r.onchange = () => { delete r.dataset.drag; s.bri = +r.value; s.on = s.bri > 0; act(t.e, "bri", s.bri); r.blur(); draw(); };
+      d.append(r);
+    } else if (t.k === "switch") d.append(el("div", "sw"));
+  } else if (t.k === "button") {
+    d.classList.add("button");
+    if (s.on) d.classList.add("on");
+    d.append(el("div", "name", t.n), el("div", "pwr", ICON[t.ic] || "▶"), el("div", "sub", s.ok ? (s.txt || "Press") : "unavailable"));
+    if (s.ok) d.onclick = () => { d.classList.add("flash"); setTimeout(() => d.classList.remove("flash"), 300); act(t.e, "press"); };
+  } else if (t.k === "sensor") {
+    d.classList.add("sensor");
+    d.append(el("div", "name", t.n));
+    const v = el("div", "v" + (s.lvl ? " l" + s.lvl : ""), s.ok ? s.val : "--");
+    if (s.ok && s.unit) v.append(el("span", "u", s.unit));
+    d.append(v, el("div", "lv" + (s.lvl ? " l" + s.lvl : ""), s.ok ? (s.txt || LEVEL[s.lvl || 0]) : "unavailable"));
+  } else if (t.k === "climate") {
+    d.classList.add("wide", "climate");
+    const left = el("div", "left");
+    const act_ = s.act || "";
+    left.append(el("div", "name", t.n), el("div", "cur", s.ok && s.cur != null ? `${s.cur.toFixed(1)}°` : "--"),
+      el("div", "act " + act_, s.ok ? (act_ === "heating" ? "Heating" : act_ === "cooling" ? "Cooling" : act_ === "off" || s.mode === "off" ? "Off" : "Idle") : "unavailable"));
+    const right = el("div", "right");
+    const set = el("div", "set");
+    const minus = el("button", "", "−"), plus = el("button", "", "+");
+    const tgt = el("div", "tgt", s.ok && s.tgt != null ? `${s.tgt.toFixed(1)}°` : "--");
+    const nudge = by => {
+      if (!s.ok) return;
+      const v = Math.min(s.max, Math.max(s.min, Math.round(((pending[t.e]?.tgt ?? s.tgt) + by) / s.step) * s.step));
+      clearTimeout(pending[t.e]?.timer);
+      // Send once the taps stop, not on every one.
+      pending[t.e] = { tgt: v, timer: setTimeout(() => { delete pending[t.e]; act(t.e, "target", v); }, 800) };
+      s.tgt = v; draw();
+    };
+    minus.onclick = () => nudge(-s.step); plus.onclick = () => nudge(s.step);
+    set.append(minus, tgt, plus);
+    const mode = el("button", "mode " + (s.mode || ""), s.ok ? (MODE_NAME[s.mode] || s.mode) : "--");
+    mode.onclick = () => { if (!s.ok || !s.modes?.length) return; const i = s.modes.indexOf(s.mode); act(t.e, "mode", s.modes[(i + 1) % s.modes.length]); };
+    right.append(set, mode);
+    d.append(left, right);
+  }
+  return d;
+}
+
+document.getElementById("go").onclick = () => {
+  id = document.getElementById("vid").value.trim() || id;
+  try { localStorage.setItem("vid", id); } catch {}
+  history.replaceState(null, "", "?id=" + encodeURIComponent(id));
+  connect();
+};
+setInterval(draw, 15000);
+connect();
+</script>
+</body>
+</html>

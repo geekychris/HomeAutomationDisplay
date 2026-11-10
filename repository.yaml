@@ -1,0 +1,5 @@
+# Home Assistant add-on repository: add this repo's URL under
+# Settings > Add-ons > Add-on store > (three dots) > Repositories.
+name: Home Automation Display
+url: https://github.com/geekychris/HomeAutomationDisplay
+maintainer: Chris Collins

@@ -1,0 +1,105 @@
+menu "Home Automation Display"
+
+config HAD_HOSTNAME
+    string "Network name (mDNS and DHCP)"
+    default "home-display"
+    help
+        The device answers at http://<name>.local/ and shows up under this
+        name in the router's device list (with the end of the MAC added, see
+        below).
+
+config HAD_HOSTNAME_ADD_MAC
+    bool "Add the end of the MAC to the network name"
+    default y
+    help
+        "home-display-a1b2c3" rather than "home-display", so several displays
+        on one network each have their own name.
+
+config HAD_HUB_URL
+    string "Hub address (blank: find it with mDNS)"
+    default ""
+    help
+        The hub's WebSocket, for example "ws://192.168.1.20:8390/ws". Leave
+        blank and the display looks for a hub advertising _hadisplay._tcp.
+        An address saved from the web page (http://<name>.local/hub)
+        overrides this.
+
+config HAD_AP_SSID
+    string "Setup access point SSID"
+    default "home-display-setup"
+    help
+        An open network that comes up when no WiFi is saved, or none of the
+        saved networks can be joined, so the device can always be set up.
+
+config HAD_WIFI_MAX_RETRY
+    int "STA failures before the setup AP comes up"
+    default 8
+
+config HAD_NTP_SERVER
+    string "NTP server"
+    default "pool.ntp.org"
+
+config HAD_TZ
+    string "Time zone (POSIX TZ string)"
+    default "PST8PDT,M3.2.0,M11.1.0"
+    help
+        For example "GMT0BST,M3.5.0/1,M10.5.0" for the UK or
+        "CET-1CEST,M3.5.0,M10.5.0/3" for central Europe.
+
+menu "Display wiring"
+
+    config HAD_LCD_SCLK_GPIO
+        int "LCD SPI clock GPIO"
+        default 14
+
+    config HAD_LCD_MOSI_GPIO
+        int "LCD SPI MOSI GPIO"
+        default 13
+
+    config HAD_LCD_CS_GPIO
+        int "LCD chip select GPIO"
+        default 15
+
+    config HAD_LCD_DC_GPIO
+        int "LCD data/command GPIO"
+        default 2
+
+    config HAD_LCD_BL_GPIO
+        int "LCD backlight GPIO (high = on)"
+        default 21
+
+    config HAD_LCD_INVERT
+        bool "Invert panel colours"
+        default n
+        help
+            Turn on if colours come out as a negative (some CYD batches).
+
+    config HAD_LCD_MIRROR_X
+        bool "Mirror the picture left to right"
+        default n
+        help
+            Turn on if text comes out backwards.
+
+    config HAD_TOUCH_SCLK_GPIO
+        int "Touch SPI clock GPIO"
+        default 25
+
+    config HAD_TOUCH_MOSI_GPIO
+        int "Touch SPI MOSI GPIO"
+        default 32
+
+    config HAD_TOUCH_MISO_GPIO
+        int "Touch SPI MISO GPIO"
+        default 39
+
+    config HAD_TOUCH_CS_GPIO
+        int "Touch chip select GPIO"
+        default 33
+
+    config HAD_TOUCH_IRQ_GPIO
+        int "Touch interrupt GPIO (low = touched)"
+        default 36
+
+endmenu
+
+endmenu
