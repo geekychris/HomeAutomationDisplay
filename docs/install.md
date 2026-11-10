@@ -115,6 +115,11 @@ scripts/flash.sh --monitor                # then watch the log
 `scripts/build-firmware.sh` builds without flashing, and also writes
 `dist/home-automation-display-<version>.bin` for flashing at 0x0.
 
+If you build with `pio run` directly, run `scripts/prepare-idf.sh` once
+first. PlatformIO's ESP-IDF 5.4 comes with a component manager too old to
+read LVGL's manifest; the build then stops with a `pyparsing` traceback.
+The scripts and `make` do this for you.
+
 Settings that are compiled in (`pio run -e cyd -t menuconfig`, under **Home
 Automation Display**): the network name, a fixed hub address, the setup
 network's name, the time zone, and the display and touch pins. If your

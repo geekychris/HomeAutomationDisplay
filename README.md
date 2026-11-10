@@ -126,8 +126,8 @@ make test       # hub tests + firmware build
 make addon      # the add-on image, built the way the Supervisor builds it
 ```
 
-Firmware: [PlatformIO](https://platformio.org/) (`pio run -e cyd`), or
-ESP-IDF 5.4 directly (`idf.py build`). Hub: Python 3.11 or newer.
+Firmware: [PlatformIO](https://platformio.org/) (`pio run -e cyd`, after
+`scripts/prepare-idf.sh` once), or ESP-IDF 5.4 directly (`idf.py build`). Hub: Python 3.11 or newer.
 
 ## License
 

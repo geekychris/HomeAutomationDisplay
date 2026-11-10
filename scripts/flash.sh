@@ -13,6 +13,7 @@ for a in "$@"; do
         *) port=(--upload-port "$a") ;;
     esac
 done
+scripts/prepare-idf.sh
 "$PIO" run -e cyd -t upload ${port[@]+"${port[@]}"}
 if [ $monitor = 1 ]; then
     "$PIO" device monitor -e cyd ${port[1]:+--port "${port[1]}"}

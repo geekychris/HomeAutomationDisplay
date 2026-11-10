@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PIO=${PIO:-$(command -v pio || echo "$HOME/.platformio/penv/bin/pio")}
+scripts/prepare-idf.sh
 "$PIO" run -e cyd
 
 version=$(sed -n 's/^set(PROJECT_VER "\(.*\)")/\1/p' CMakeLists.txt)
