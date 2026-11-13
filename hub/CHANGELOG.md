@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+- Admin page: the House panel is now where tiles are added. Entities are
+  grouped by device (or area, or type) in collapsible groups; **+ Add** puts
+  one on the highlighted page and the list stays where it was.
+- Search with several words, matched against name, device, area, entity id
+  and type, ranked, highlighted, and with `-word` to exclude.
+- Type filters (lights, switches, climate, scenes, sensors), and diagnostic
+  and settings entities hidden by default.
+- Home Assistant backend reads each entity's device and entity category
+  from HA's registries. The mock house has devices too.
+
 ## 0.3.0
 
 - Home Assistant backend: one WebSocket to HA (through the Supervisor as an

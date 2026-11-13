@@ -61,11 +61,56 @@ HOUSE = {
         "friendly_name": "Lock battery", "device_class": "battery", "unit_of_measurement": "%"}),
     "person.alex": ("home", {"friendly_name": "Alex"}),
     "weather.home": ("partlycloudy", {"friendly_name": "Weather", "temperature": 8.2, "temperature_unit": "°C"}),
+    # A smart plug, as HA shows one: the switch, and readings beside it.
+    "sensor.coffee_maker_power": ("0.0", {
+        "friendly_name": "Coffee maker Power", "device_class": "power",
+        "unit_of_measurement": "W", "state_class": "measurement"}),
+    "sensor.coffee_maker_energy": ("12.84", {
+        "friendly_name": "Coffee maker Energy", "device_class": "energy",
+        "unit_of_measurement": "kWh", "state_class": "total_increasing"}),
+    "sensor.coffee_maker_signal": ("-61", {
+        "friendly_name": "Coffee maker Signal strength", "device_class": "signal_strength",
+        "unit_of_measurement": "dBm"}),
     "climate.house_heater": ("heat", {
         "friendly_name": "Heating", "hvac_modes": ["off", "heat"], "hvac_action": "idle",
         "current_temperature": 19.4, "temperature": 20.5, "min_temp": 7, "max_temp": 30,
         "target_temp_step": 0.5, "temperature_unit": "°C", "supported_features": 1}),
 }
+
+# What HA's registries would add (backends/homeassistant.py): the device each
+# entity belongs to, its area, and the entity category.
+# device id -> (device name, area, [entity ids])
+DEVICES = {
+    "living_room_bulb": ("Living room bulb", "Living room", ["light.living_room"]),
+    "kitchen_bulb": ("Kitchen bulb", "Kitchen", ["light.kitchen"]),
+    "bedroom_bulb": ("Bedroom bulb", "Bedroom", ["light.bedroom"]),
+    "porch_light": ("Porch light", "Outside", ["light.porch"]),
+    "coffee_plug": ("Coffee maker", "Kitchen", ["switch.coffee_maker", "sensor.coffee_maker_power",
+                                                 "sensor.coffee_maker_energy", "sensor.coffee_maker_signal"]),
+    "garden_pump": ("Garden pump", "Outside", ["switch.garden_pump"]),
+    "air_monitor": ("Air quality monitor", "Living room", ["sensor.living_room_temperature", "sensor.living_room_humidity",
+                                                   "sensor.living_room_co2", "sensor.living_room_voc"]),
+    "weather_station": ("Weather station", "Outside", ["sensor.outdoor_temperature"]),
+    "front_door_contact": ("Front door contact", "Hall", ["binary_sensor.front_door"]),
+    "front_door_lock": ("Front door lock", "Hall", ["lock.front_door", "sensor.door_lock_battery"]),
+    "bedroom_fan": ("Bedroom fan", "Bedroom", ["fan.bedroom"]),
+    "living_room_blind": ("Living room blind", "Living room", ["cover.living_room_blind"]),
+    "garage_door": ("Garage door", "Garage", ["cover.garage_door"]),
+    "kitchen_smoke": ("Kitchen smoke alarm", "Kitchen", ["binary_sensor.kitchen_smoke"]),
+    "thermostat": ("Thermostat", "Living room", ["climate.house_heater"]),
+}
+CATEGORY = {"sensor.coffee_maker_signal": "diagnostic", "sensor.door_lock_battery": "diagnostic"}
+
+
+def registry_extras() -> dict[str, dict]:
+    extra: dict[str, dict] = {}
+    for device_id, (name, area, entity_ids) in DEVICES.items():
+        for entity_id in entity_ids:
+            extra[entity_id] = {"device": name, "device_id": device_id, "area": area}
+    for entity_id, category in CATEGORY.items():
+        extra.setdefault(entity_id, {})["entity_category"] = category
+    return extra
+
 
 HEATER = "climate.house_heater"
 ROOM_TEMP = "sensor.living_room_temperature"
@@ -80,8 +125,9 @@ class MockBackend(Backend):
         self._tick = tick
         self._rand = random.Random(seed)
         self._task: asyncio.Task | None = None
+        extras = registry_extras()
         for entity_id, (state, attrs) in copy.deepcopy(HOUSE).items():
-            self._set(entity_id, state, attrs)
+            self._set(entity_id, state, {**attrs, **extras.get(entity_id, {})})
 
     async def start(self) -> None:
         if self._tick > 0:

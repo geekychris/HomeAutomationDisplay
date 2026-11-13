@@ -153,9 +153,23 @@ under Setup.
    **Identify**, and that display shows its id for 10 seconds, so you know
    which panel you are editing.
 2. Give it a name ("Kitchen").
-3. Add pages, and tiles from **+ Add a tile…** (grouped by area when Home
-   Assistant has areas). Give tiles shorter labels if you like, and set
-   your own warn/bad levels on sensors.
+3. Add tiles from the **House** panel on the right: **+ Add** puts an
+   entity on the highlighted page (click a page, or pick one in the panel,
+   to change which). The list stays where it is, so you can add a device's
+   entities one after another. Give tiles shorter labels if you like, and
+   set your own warn/bad levels on sensors.
+
+   Finding entities in the House panel:
+   - **Search** with any words, in any order: `kitchen light`, `plug power`,
+     `battery`. Every word must match the name, device, area, entity id or
+     type. A word starting with `-` leaves matches out (`power -energy`).
+     Press `/` to jump to the search, and Esc to clear it.
+   - **Type chips** narrow the list: pick **Switches** alone, say, to see
+     only the on/off part of each smart plug and not its power readings.
+   - **Group by** device (as in HA's device pages), area or type.
+   - **Hide diagnostic & settings** leaves out what HA files under a
+     device's Diagnostic and Configuration sections (signal strength,
+     firmware, settings).
 4. Press **Save to display**. The display changes straight away.
 
 **Copy layout from…** starts a display from another one's layout.

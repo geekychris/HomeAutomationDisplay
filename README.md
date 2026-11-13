@@ -20,7 +20,8 @@ flowchart LR
   hub over mDNS, and appears in the hub's admin page. **Identify** makes it
   show its id, so you can tell which panel is which.
 - **Pick tiles in the admin page.** Choose from your Home Assistant
-  entities (grouped by area), in up to 6 pages of 8. Saving updates the
+  entities, grouped by device or area, with search and type filters, in up
+  to 6 pages of 8. Saving updates the
   display at once, with no reflashing.
 - **Many entity types.** Lights (dimming), fans (speed), covers (position),
   switches, locks, automations, sirens, scenes, scripts, buttons, sensors
