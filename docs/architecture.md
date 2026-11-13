@@ -44,7 +44,7 @@ flowchart LR
         netcfg["netcfg<br/>WiFi, setup AP, mDNS, SNTP"]
         hub_c["hub.c<br/>WebSocket client, tile model"]
         dash["dashboard.c<br/>LVGL tiles"]
-        touch["display.c, xpt2046.c<br/>LCD, touch, calibration"]
+        touch["board/ (panel, touch, pins)<br/>display.c (LVGL, calibration)"]
     end
     browser["You: browser"]
 

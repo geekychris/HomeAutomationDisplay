@@ -86,20 +86,26 @@ This gives you a mock house at `http://localhost:8390/`, and a virtual display a
 
 ## 2. The firmware
 
-You need an ESP32 "Cheap Yellow Display": the ESP32-2432S028R, or a clone
-such as the ELEGOO 2.8" E32R28T. Connect it by USB. It has a CH340 serial
-chip; macOS and Linux have drivers built in, and Windows may need the
-CH340 driver.
+You need one of these boards. Each is its own build:
+
+| Build (`BOARD`) | Boards | Screen | Touch |
+|---|---|---|---|
+| `cyd` | ESP32-2432S028R "Cheap Yellow Display", ELEGOO E32R28T (2.8") | ILI9341 320×240 | XPT2046 resistive |
+| `st7796r` | Sunton ESP32-3248S035R (3.5"), ELEGOO / LCDwiki E32R35T (3.5") and E32R40T (4.0") | ST7796 480×320 | XPT2046 resistive |
+| `sunton35c` | Sunton ESP32-3248S035C (3.5") | ST7796 480×320 | GT911 capacitive |
+
+Connect it by USB. It has a CH340 serial chip; macOS and Linux have
+drivers built in, and Windows may need the CH340 driver.
 
 **From a release** (no tools to install beyond esptool):
 
 ```sh
 pip install esptool
 esptool.py --chip esp32 --port /dev/cu.usbserial-110 --baud 460800 \
-    write_flash 0x0 home-automation-display-0.3.0.bin
+    write_flash 0x0 home-automation-display-0.4.0-cyd.bin
 ```
 
-Download `home-automation-display-<version>.bin` from the
+Download `home-automation-display-<version>-<board>.bin` for your board from the
 [releases](https://github.com/geekychris/HomeAutomationDisplay/releases)
 page. On Windows the port is `COM3` or similar; on Linux it is
 `/dev/ttyUSB0`.
@@ -110,10 +116,12 @@ page. On Windows the port is `COM3` or similar; on Linux it is
 scripts/flash.sh                          # build and flash; PlatformIO finds the port
 scripts/flash.sh /dev/cu.usbserial-110    # or name it
 scripts/flash.sh --monitor                # then watch the log
+BOARD=st7796r scripts/flash.sh            # another board: st7796r, sunton35c (default cyd)
 ```
 
-`scripts/build-firmware.sh` builds without flashing, and also writes
-`dist/home-automation-display-<version>.bin` for flashing at 0x0.
+`scripts/build-firmware.sh` builds every board without flashing, and also
+writes `dist/home-automation-display-<version>-<board>.bin` for flashing at
+0x0. Name boards to build just those: `scripts/build-firmware.sh st7796r`.
 
 If you build with `pio run` directly, run `scripts/prepare-idf.sh` once
 first. PlatformIO's ESP-IDF 5.4 comes with a component manager too old to
@@ -122,7 +130,8 @@ The scripts and `make` do this for you.
 
 Settings that are compiled in (`pio run -e cyd -t menuconfig`, under **Home
 Automation Display**): the network name, a fixed hub address, the setup
-network's name, the time zone, and the display and touch pins. If your
+network's name, the time zone, and the board. Capacitive boards need no
+touch calibration. If your
 panel's colours come out inverted, or the picture is mirrored, turn on
 `HAD_LCD_INVERT` or `HAD_LCD_MIRROR_X`.
 

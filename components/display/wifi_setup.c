@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_lvgl_port.h"
+#include "ui.h"
 
 #define MAX_NETS 16
 
@@ -49,7 +50,7 @@ static void fill(void)
     for (int i = 0; i < ns; i++) {
         lv_obj_t *b = lv_list_add_button(s_list, LV_SYMBOL_WIFI, saved[i]);
         lv_obj_t *x = lv_button_create(b);
-        lv_obj_set_size(x, 36, 26);
+        lv_obj_set_size(x, PX(36), PX(26));
         lv_obj_set_style_bg_color(x, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
         lv_obj_t *l = lv_label_create(x);
         lv_label_set_text(l, LV_SYMBOL_TRASH);
@@ -155,20 +156,20 @@ static void ask_password(const char *ssid)
     s_pw_title = lv_label_create(s_pw_scr);
     lv_label_set_text_fmt(s_pw_title, "Password for %s", ssid);
     lv_label_set_long_mode(s_pw_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_pw_title, 300);
-    lv_obj_set_pos(s_pw_title, 8, 6);
+    lv_obj_set_width(s_pw_title, UI.w - PX(20));
+    lv_obj_set_pos(s_pw_title, PX(8), PX(6));
     s_pw_ta = lv_textarea_create(s_pw_scr);
     lv_textarea_set_one_line(s_pw_ta, true);
     lv_textarea_set_password_mode(s_pw_ta, true);
     lv_textarea_set_max_length(s_pw_ta, 64);
-    lv_obj_set_size(s_pw_ta, 220, 38);
-    lv_obj_set_pos(s_pw_ta, 6, 28);
+    lv_obj_set_size(s_pw_ta, UI.w - PX(100), PX(38));
+    lv_obj_set_pos(s_pw_ta, PX(6), PX(28));
     lv_obj_t *show = lv_checkbox_create(s_pw_scr);
     lv_checkbox_set_text(show, "Show");
-    lv_obj_set_pos(show, 236, 38);
+    lv_obj_set_pos(show, UI.w - PX(84), PX(38));
     lv_obj_add_event_cb(show, on_show, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_t *kb = lv_keyboard_create(s_pw_scr);
-    lv_obj_set_size(kb, 320, 168);
+    lv_obj_set_size(kb, UI.w, UI.h - PX(72));
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(kb, s_pw_ta);
     // The keyboard's tick key saves, its keyboard key goes back.
@@ -225,37 +226,37 @@ void wifi_setup_open(lv_obj_t *back)
 
     lv_obj_t *title = lv_label_create(s_scr);
     lv_label_set_text(title, LV_SYMBOL_WIFI "  WiFi");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_set_pos(title, 8, 8);
+    lv_obj_set_style_text_font(title, UI.mid, 0);
+    lv_obj_set_pos(title, PX(8), PX(8));
     lv_obj_t *done = lv_button_create(s_scr);
-    lv_obj_set_size(done, 70, 34);
-    lv_obj_set_pos(done, 244, 4);
+    lv_obj_set_size(done, PX(70), PX(34));
+    lv_obj_set_pos(done, UI.w - PX(76), PX(4));
     lv_obj_t *l = lv_label_create(done);
     lv_label_set_text(l, "Done");
     lv_obj_center(l);
     lv_obj_add_event_cb(done, on_close, LV_EVENT_CLICKED, NULL);
     s_scan_btn = lv_button_create(s_scr);
-    lv_obj_set_size(s_scan_btn, 80, 34);
-    lv_obj_set_pos(s_scan_btn, 158, 4);
+    lv_obj_set_size(s_scan_btn, PX(80), PX(34));
+    lv_obj_set_pos(s_scan_btn, UI.w - PX(162), PX(4));
     l = lv_label_create(s_scan_btn);
     lv_label_set_text(l, LV_SYMBOL_REFRESH " Scan");
     lv_obj_center(l);
     lv_obj_add_event_cb(s_scan_btn, on_scan, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *now = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(now, &lv_font_montserrat_12, 0);
-    lv_obj_set_pos(now, 8, 42);
+    lv_obj_set_style_text_font(now, UI.small, 0);
+    lv_obj_set_pos(now, PX(8), PX(42));
     lv_obj_set_user_data(s_scr, now);
     s_status = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(s_status, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(s_status, UI.small, 0);
     lv_obj_set_style_text_color(s_status, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
-    lv_obj_set_width(s_status, 304);
+    lv_obj_set_width(s_status, UI.w - PX(16));
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_pos(s_status, 8, 58);
+    lv_obj_set_pos(s_status, PX(8), PX(58));
 
     s_list = lv_list_create(s_scr);
-    lv_obj_set_size(s_list, 320, 240 - 76);
-    lv_obj_set_pos(s_list, 0, 76);
+    lv_obj_set_size(s_list, UI.w, UI.h - PX(76));
+    lv_obj_set_pos(s_list, 0, PX(76));
     lv_obj_set_style_radius(s_list, 0, 0);
     lv_obj_set_style_border_width(s_list, 0, 0);
 
