@@ -43,3 +43,8 @@ humidifiers, locks, sensors, binary sensors, numbers, counters, selects,
 texts, people, device trackers, weather, sun, updates, thermostats, scenes,
 scripts and buttons. See the
 [entity reference](https://github.com/geekychris/HomeAutomationDisplay/blob/master/docs/entities.md).
+
+## License
+
+© 2026 Chris Collins. MIT License: see
+[LICENSE](https://github.com/geekychris/HomeAutomationDisplay/blob/master/LICENSE).

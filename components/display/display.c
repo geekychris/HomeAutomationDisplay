@@ -131,7 +131,8 @@ static void build_setup(lv_obj_t *scr)
     lv_obj_set_height(b, 38);
     lv_obj_t *t = small(col);
     lv_label_set_text(t, "Holding the BOOT button also starts touch calibration. "
-                         "The hub address can be set at http://<name>.local/hub.");
+                         "The hub address can be set at http://<name>.local/hub.\n"
+                         "(c) 2026 Chris Collins - MIT License");
     lv_obj_set_width(t, lv_pct(100));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
 }

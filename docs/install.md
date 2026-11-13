@@ -166,7 +166,8 @@ under Setup.
      Press `/` to jump to the search, and Esc to clear it.
    - **Type chips** narrow the list: pick **Switches** alone, say, to see
      only the on/off part of each smart plug and not its power readings.
-   - **Group by** device (as in HA's device pages), area or type.
+   - **Group by** device (as in HA's device pages), room then device (each
+     of HA's areas, with its devices inside), room, or type.
    - **Hide diagnostic & settings** leaves out what HA files under a
      device's Diagnostic and Configuration sections (signal strength,
      firmware, settings).

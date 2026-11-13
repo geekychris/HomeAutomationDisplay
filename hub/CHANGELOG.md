@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Admin page: a **Room, then device** grouping: each room (HA area) holds
+  its devices as groups of their own, and its loose entities (helpers,
+  scenes) directly. **Expand all** opens the devices inside rooms too.
+- Copyright and MIT License notices on the admin page, the virtual display,
+  the add-on documentation, and the display's Setup screen and web pages.
+
 ## 0.4.0
 
 - Admin page: the House panel is now where tiles are added. Entities are

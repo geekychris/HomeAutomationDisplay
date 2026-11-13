@@ -14,6 +14,8 @@ body { margin: 0; min-height: 100vh; background: var(--page); color: var(--page-
 .frame { background: var(--frame); padding: 18px 26px; border-radius: 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
 .scaler { width: calc(320px * var(--s)); height: calc(240px * var(--s)); --s: 2; }
 @media (max-width: 760px) { .scaler { --s: 1; } }
+footer { font-size: 12px; color: var(--page-muted); }
+footer a { color: inherit; }
 #screen { width: 320px; height: 240px; transform: scale(var(--s)); transform-origin: 0 0; overflow: hidden; position: relative;
   background: #15171a; color: #f0f0f0; font: 14px/1.2 Montserrat, system-ui, sans-serif; user-select: none; }
 .bar { height: 30px; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: #22262b; }
@@ -73,6 +75,7 @@ a { color: inherit; }
   <span id="state">…</span>
   <a href="./" target="_blank" rel="noopener">Hub admin ↗</a>
 </div>
+<footer>&copy; 2026 Chris Collins &middot; <a href="https://github.com/geekychris/HomeAutomationDisplay/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a></footer>
 <script>
 // A display in a browser tab. Speaks the same protocol as the firmware
 // (docs/protocol.md) and draws the same screen, so layouts can be built and
