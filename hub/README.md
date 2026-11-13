@@ -77,3 +77,8 @@ registries, service calls, reconnects), and checks the admin guard.
 | `docker-compose.yml`, `.env.example` | Running in Docker without the add-on system |
 
 The display protocol is in [../docs/protocol.md](../docs/protocol.md).
+
+## License
+
+© 2026 Chris Collins. MIT License: see
+[LICENSE](https://github.com/geekychris/HomeAutomationDisplay/blob/master/LICENSE).

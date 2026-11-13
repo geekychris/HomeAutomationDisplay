@@ -83,6 +83,9 @@ input, select { background: var(--input); border: 1px solid var(--line); border-
 #addto select { font-size: 12px; padding: 1px 4px; }
 details.grp { border-top: 1px solid var(--line); }
 details.grp:first-child { border-top: 0; }
+details.grp.sub { margin-left: 14px; }
+details.grp.sub > summary { padding: 5px 2px; }
+details.grp.sub .gname { font-weight: 550; }
 details.grp > summary { list-style: none; cursor: pointer; padding: 7px 2px; display: flex; gap: 6px; align-items: baseline; }
 details.grp > summary::-webkit-details-marker { display: none; }
 details.grp > summary:hover .gname { color: var(--accent); }
@@ -96,6 +99,7 @@ button.add { white-space: nowrap; font-size: 12px; padding: 2px 8px; }
 button.add.done { opacity: .55; }
 .page.target { outline: 2px solid var(--accent); outline-offset: -1px; }
 .page .target-note { font-size: 12px; color: var(--accent); }
+footer { padding: 4px 20px 20px; font-size: 12px; color: var(--muted); text-align: center; }
 </style>
 </head>
 <body>
@@ -123,7 +127,8 @@ button.add.done { opacity: .55; }
     <div id="kinds" class="chips"></div>
     <div class="opts-row">
       <label>Group by <select id="groupby">
-        <option value="device">Device</option><option value="area">Area</option><option value="kind">Type</option>
+        <option value="device">Device</option><option value="room">Room, then device</option>
+        <option value="area">Room</option><option value="kind">Type</option>
       </select></label>
       <label title="Signal strength, firmware, battery and settings entities that HA files under a device's Diagnostic and Configuration sections">
         <input type="checkbox" id="hidediag"> Hide diagnostic &amp; settings</label>
@@ -138,6 +143,7 @@ button.add.done { opacity: .55; }
     <div id="entities"></div>
   </section>
 </main>
+<footer>&copy; 2026 Chris Collins &middot; <a href="https://github.com/geekychris/HomeAutomationDisplay/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a></footer>
 
 <script>
 const KIND_ICON = { light: "💡", switch: "⏻", sensor: "📈", climate: "🌡", button: "▶" };
@@ -379,27 +385,46 @@ function hl(text, words = terms) {
 }
 const hasDevices = () => Object.values(entities).some(e => e.attributes.device_id);
 const hasAreas = () => Object.values(entities).some(e => e.attributes.area);
+// What the house can actually be grouped by: no devices or areas from HA, no grouping by them.
 function groupMode() {
-  if (prefs.group === "device" && !hasDevices()) return hasAreas() ? "area" : "kind";
-  if (prefs.group === "area" && !hasAreas()) return "kind";
-  return prefs.group;
+  const g = prefs.group, dev = hasDevices(), area = hasAreas();
+  if (g === "room") return area && dev ? "room" : area ? "area" : dev ? "device" : "kind";
+  if (g === "device" && !dev) return area ? "area" : "kind";
+  if (g === "area" && !area) return "kind";
+  return g;
 }
 const NO_DEVICE = "d:";
 function groupOf(e, mode) {
   const a = e.attributes;
   if (mode === "device") return a.device_id ? { key: "d:" + a.device_id, label: a.device, sub: a.area || "" }
     : { key: NO_DEVICE, label: "Not part of a device", sub: "helpers, scenes, automations…", last: true };
-  if (mode === "area") return a.area ? { key: "a:" + a.area, label: a.area } : { key: "a:", label: "No area", last: true };
+  // "room" is the same rooms, each split by device when it opens (byDevice below).
+  if (mode === "area" || mode === "room") return a.area ? { key: "a:" + a.area, label: a.area } : { key: "a:", label: "No room", last: true };
   return { key: "k:" + e.kind, label: KIND_LABEL[e.kind] || e.kind, order: KIND_ORDER.indexOf(e.kind) };
 }
 // In a device's group, "Coffee maker Power" reads better as "Power".
 function shortName(e, mode) {
   const n = nameOf(e.entity_id), d = e.attributes.device;
-  if (mode === "device" && d && n.length > d.length + 1 && n.toLowerCase().startsWith(d.toLowerCase() + " ")) {
+  if ((mode === "device" || mode === "room") && d && n.length > d.length + 1 && n.toLowerCase().startsWith(d.toLowerCase() + " ")) {
     const rest = n.slice(d.length + 1);
     return rest[0].toUpperCase() + rest.slice(1);
   }
   return n;
+}
+
+// A room's entities split by device; the ones not part of a device are left loose.
+function byDevice(g) {
+  const subs = new Map(), loose = [];
+  for (const it of g.items) {
+    const a = it[0].attributes;
+    if (!a.device_id) { loose.push(it); continue; }
+    const key = g.key + "|d:" + a.device_id;
+    if (!subs.has(key)) subs.set(key, { key, label: a.device, items: [], best: 0 });
+    const S = subs.get(key);
+    S.items.push(it);
+    S.best = Math.max(S.best, it[1]);
+  }
+  return { subs: [...subs.values()], loose };
 }
 
 function renderChips() {
@@ -438,37 +463,50 @@ function renderEntities(keepScroll = false) {
     G.best = Math.max(G.best, s);
     shown++;
   }
-  const list = [...groups.values()].sort((x, y) =>
+  const sortGroups = gs => gs.sort((x, y) =>
     (searching ? y.best - x.best : 0) || (x.last ? 1 : 0) - (y.last ? 1 : 0)
     || (x.order ?? 0) - (y.order ?? 0) || x.label.localeCompare(y.label));
-  let rows = 0;
-  const els = list.map(g => {
-    g.items.sort(([a, sa], [b, sb]) => (sb - sa) || shortName(a, mode).localeCompare(shortName(b, mode)));
-    // Searching opens every group that fits; otherwise only the ones opened by hand.
-    const open = searching ? rows + g.items.length <= ROW_MAX || rows === 0 : openGroups.has(g.key) || list.length === 1;
-    if (open) rows += g.items.length;
-    const det = h("details", { class: "grp", open },
+  const sortItems = items => items.sort(([a, sa], [b, sb]) => (sb - sa) || shortName(a, mode).localeCompare(shortName(b, mode)));
+  const row = e => { const r = h("div", { class: "ent-row", id: "ent-" + e.entity_id }); renderEntity(e, r); return r; };
+  const list = sortGroups([...groups.values()]);
+  // budget.rows: rows built so far. While searching, groups open until about ROW_MAX rows are showing.
+  const makeGroup = (g, budget, nested = false) => {
+    sortItems(g.items);
+    const split = mode === "room" && !nested;
+    const open = searching ? budget.rows + g.items.length <= ROW_MAX || budget.rows === 0
+      : openGroups.has(g.key) || (!nested && list.length === 1);
+    const det = h("details", { class: "grp" + (nested ? " sub" : ""), open },
       h("summary", {},
         h("span", { class: "caret" }, "▸"),
         h("span", { class: "gname" }, hl(g.label)),
         g.sub ? h("span", { class: "small muted" }, hl(g.sub)) : null,
         h("span", { class: "count small muted" }, String(g.items.length))));
-    const fill = () => {
+    const fill = b => {
       if (det.dataset.filled) return;
       det.dataset.filled = "1";
-      for (const [e] of g.items) { const row = h("div", { class: "ent-row", id: "ent-" + e.entity_id }); det.append(row); renderEntity(e, row); }
+      if (split) {
+        const { subs, loose } = byDevice(g);
+        for (const sg of sortGroups(subs)) det.append(makeGroup(sg, b, true));
+        for (const [e] of sortItems(loose)) det.append(row(e));
+        b.rows += loose.length;
+      } else {
+        for (const [e] of g.items) det.append(row(e));
+        b.rows += g.items.length;
+      }
     };
     det.addEventListener("toggle", () => {
-      if (det.open) fill();
+      if (det.open) fill({ rows: 0 });        // opened by hand: show all of it
       if (!searching) det.open ? openGroups.add(g.key) : openGroups.delete(g.key);
     });
-    if (open) fill();
+    if (open) fill(budget);
     return det;
-  });
+  };
+  const budget = { rows: 0 };
+  const els = list.map(g => makeGroup(g, budget));
   box.replaceChildren(...els);
   if (!shown) box.append(h("p", { class: "small muted" }, total ? "Nothing matches." : "No entities yet."));
   if (keepScroll) box.scrollTop = scroll;
-  const noun = (mode === "device" ? "device" : mode === "area" ? "area" : "type") + (list.length === 1 ? "" : "s");
+  const noun = (mode === "device" ? "device" : mode === "kind" ? "type" : "room") + (list.length === 1 ? "" : "s");
   $("#count").replaceChildren(total ? `${shown} of ${total} entities in ${list.length} ${noun}` : "");
   if (hidden) $("#count").append(" · ", h("button", { class: "linkish", onclick: () => setHideDiag(false) },
     `show ${hidden} diagnostic & settings`));
@@ -476,8 +514,14 @@ function renderEntities(keepScroll = false) {
 }
 function setHideDiag(v) { prefs.hideDiag = v; $("#hidediag").checked = v; savePrefs(); renderEntities(true); }
 function setGroupsOpen(open) {
-  for (const d of document.querySelectorAll("#entities details.grp")) d.open = open;
-  if (!open) openGroups.clear();
+  if (!open) {
+    for (const d of document.querySelectorAll("#entities details.grp")) d.open = false;
+    openGroups.clear();
+    return;
+  }
+  // Opening a room builds its device groups, which then need opening too.
+  for (let closed; (closed = document.querySelectorAll("#entities details.grp:not([open])")).length;)
+    for (const d of closed) { d.open = true; d.dispatchEvent(new Event("toggle")); }
 }
 function focusSearch() {
   const f = $("#filter");
@@ -565,7 +609,7 @@ function renderEntity(e, row = document.getElementById("ent-" + e.entity_id)) {
   }
   const mode = groupMode();
   // Where it is, unless the group heading already says so.
-  const where = mode === "device" ? [] : mode === "area" ? [a.device] : [a.device, a.area];
+  const where = mode === "device" || mode === "room" ? [] : mode === "area" ? [a.device] : [a.device, a.area];
   ctl.append(h("span", { class: "addslot", "data-id": e.entity_id }, addButton(e) || ""));
   row.replaceChildren(
     h("span", { class: "kind", title: e.domain }, iconOf(e)),

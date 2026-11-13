@@ -17,6 +17,7 @@ static const char PAGE[] =
 "<p>Leave blank to find the hub automatically (mDNS).</p>"
 "<form id=f><input id=u placeholder='ws://192.168.1.20:8390/ws'>"
 "<button>Save</button></form><p id=msg></p><p><a href=/>WiFi setup</a></p>"
+"<p style='font-size:12px;color:#888'>&copy; 2026 Chris Collins &middot; MIT License</p>"
 "<script>const $=i=>document.getElementById(i);"
 "async function load(){const j=await(await fetch('/api/hub')).json();$('id').textContent=j.id;"
 "$('st').textContent=j.status;if(document.activeElement!==$('u'))$('u').value=j.url}"

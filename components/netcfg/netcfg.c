@@ -358,6 +358,7 @@ static const char PAGE[] =
 "<h3>Add</h3><form id=f><input id=s placeholder='Network name' list=found>"
 "<datalist id=found></datalist><input id=p type=password placeholder=Password>"
 "<button>Save</button> <button type=button id=scan>Scan</button></form><p id=msg></p>"
+"<p style='font-size:12px;color:#888'>&copy; 2026 Chris Collins &middot; MIT License</p>"
 "<script>const $=i=>document.getElementById(i);"
 "async function load(){const j=await(await fetch('/api/net')).json();$('now').textContent=j.summary;"
 "$('saved').innerHTML='';for(const n of j.saved){const li=document.createElement('li');li.textContent=n;"
