@@ -61,11 +61,12 @@ class FakeHA:
                                     "result": [{"area_id": "kitchen", "name": "Kitchen"}]})
             elif t == "config/device_registry/list":
                 await ws.send_json({"id": i, "type": "result", "success": True,
-                                    "result": [{"id": "dev1", "area_id": "kitchen"}]})
+                                    "result": [{"id": "dev1", "area_id": "kitchen", "name": "Hue bulb",
+                                                "name_by_user": "Kitchen ceiling"}]})
             elif t == "config/entity_registry/list":
                 await ws.send_json({"id": i, "type": "result", "success": True, "result": [
                     {"entity_id": "light.kitchen", "device_id": "dev1", "area_id": None},
-                    {"entity_id": "sensor.co2", "area_id": None, "options": {"sensor": {"display_precision": 1}}}]})
+                    {"entity_id": "sensor.co2", "area_id": None, "entity_category": "diagnostic", "options": {"sensor": {"display_precision": 1}}}]})
             elif t == "call_service":
                 self.calls.append((m["domain"], m["service"], m.get("target"), m.get("service_data")))
                 entity_id = (m.get("target") or {}).get("entity_id")
@@ -120,6 +121,10 @@ class HomeAssistantTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sorted(b.states()), ["light.kitchen", "sensor.co2"])   # no media_player
             light = b.get("light.kitchen")
             self.assertEqual(light.attributes["area"], "Kitchen")                    # from the device
+            self.assertEqual(light.attributes["device"], "Kitchen ceiling")          # the name the user gave it
+            self.assertEqual(light.attributes["device_id"], "dev1")
+            self.assertNotIn("device", b.get("sensor.co2").attributes)               # not part of a device
+            self.assertEqual(b.get("sensor.co2").attributes["entity_category"], "diagnostic")
             self.assertNotIn("entity_picture", light.attributes)                     # trimmed
             self.assertEqual(b.get("sensor.co2").attributes["suggested_display_precision"], 1)
             self.assertIn("2026.11.0", b.status()["detail"])

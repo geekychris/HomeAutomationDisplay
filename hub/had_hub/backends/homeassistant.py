@@ -4,8 +4,9 @@ One connection carries everything: get_states once, then state_changed
 events as they happen, and call_service for taps. Only entities a display
 could show (entities.KIND_BY_DOMAIN) are kept, and of their attributes only
 the ones the hub reads (entities.USED_ATTRIBUTES), plus two things from HA's
-registries: the area, so the admin page can group by room, and the sensor
-display precision set in HA's UI.
+registries: the device and area, so the admin page can group by device or
+room, the entity category (diagnostic and config entities can be hidden
+there), and the sensor display precision set in HA's UI.
 
 Run as a Home Assistant add-on it connects through the Supervisor
 (ws://supervisor/core/websocket) with the token the Supervisor hands every
@@ -67,7 +68,8 @@ class HomeAssistantBackend(Backend):
         self._connected = False
         self._detail = "connecting"
         self._ha_version = ""
-        # Registry extras, merged into attributes: entity_id -> {"area": .., "suggested_display_precision": ..}
+        # Registry extras, merged into attributes: entity_id -> {"area": .., "device": ..,
+        # "device_id": .., "entity_category": .., "suggested_display_precision": ..}
         self._extra: dict[str, dict] = {}
         self._raw: dict[str, tuple[str, dict]] = {}     # last (state, trimmed attrs) from HA
 
@@ -229,14 +231,15 @@ class HomeAssistantBackend(Backend):
             self._set(entity_id, "unavailable", {})
 
     async def _load_registries(self) -> None:
-        """Areas, and the display precision people set in HA's UI. Optional:
-        without them the hub works the same, with less to sort by."""
+        """Devices, areas, entity categories, and the display precision people
+        set in HA's UI. Optional: without them the hub works the same, with
+        less to sort by."""
         try:
             areas = {a["area_id"]: a["name"] for a in await self._command({"type": "config/area_registry/list"})}
-            devices = {d["id"]: d.get("area_id") for d in await self._command({"type": "config/device_registry/list"})}
+            devices = {d["id"]: d for d in await self._command({"type": "config/device_registry/list"})}
             entries = await self._command({"type": "config/entity_registry/list"}, timeout=60)
         except Exception as err:
-            log.info("could not read HA's registries (%s); no areas", err)
+            log.info("could not read HA's registries (%s); no devices or areas", err)
             return
         extra: dict[str, dict] = {}
         for r in entries:
@@ -244,9 +247,17 @@ class HomeAssistantBackend(Backend):
             if not _keep(entity_id):
                 continue
             x = {}
-            area = areas.get(r.get("area_id") or devices.get(r.get("device_id")) or "")
+            device = devices.get(r.get("device_id") or "") or {}
+            # An entity's own area wins over its device's, as in HA.
+            area = areas.get(r.get("area_id") or device.get("area_id") or "")
             if area:
                 x["area"] = area
+            device_name = device.get("name_by_user") or device.get("name")
+            if device_name:
+                x["device"] = device_name
+                x["device_id"] = device["id"]
+            if r.get("entity_category"):
+                x["entity_category"] = r["entity_category"]
             sensor_opts = (r.get("options") or {}).get("sensor") or {}
             prec = sensor_opts.get("display_precision", sensor_opts.get("suggested_display_precision"))
             if prec is not None:

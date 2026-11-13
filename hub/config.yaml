@@ -1,6 +1,6 @@
 # Home Assistant add-on: the display hub.
 name: Display Hub
-version: "0.3.0"
+version: "0.4.0"
 slug: display_hub
 description: Wall-panel hub for ESP32 Cheap Yellow Display touchscreens - pick which entities each display shows.
 url: https://github.com/geekychris/HomeAutomationDisplay

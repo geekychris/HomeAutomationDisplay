@@ -135,7 +135,9 @@ USED_ATTRIBUTES = {
     "friendly_name", "device_class", "unit_of_measurement", "suggested_display_precision",
     "supported_color_modes", "color_mode", "brightness", "supported_features", "percentage",
     "current_position", "hvac_modes", "hvac_action", "current_temperature", "temperature",
-    "min_temp", "max_temp", "target_temp_step", "temperature_unit", "area",
+    "min_temp", "max_temp", "target_temp_step", "temperature_unit",
+    # From HA's registries rather than the state (backends/homeassistant.py).
+    "area", "device", "device_id", "entity_category",
 }
 
 

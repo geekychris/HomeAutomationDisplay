@@ -59,8 +59,7 @@ input, select { background: var(--input); border: 1px solid var(--line); border-
 .empty { padding: 24px; text-align: center; color: var(--muted); }
 #msg { min-height: 1.4em; }
 #msg.err { color: var(--bad); }
-.ent-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
-.ent-row:first-child { border-top: 0; }
+.ent-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0 6px 14px; border-top: 1px solid var(--line); }
 .ent-row .ctl { display: flex; gap: 6px; align-items: center; }
 .ent-row input[type=range] { width: 90px; }
 .val { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -70,7 +69,33 @@ input, select { background: var(--input); border: 1px solid var(--line); border-
 .group { font-size: 12px; color: var(--muted); margin: 12px 0 2px; text-transform: capitalize; }
 #ha { display: none; padding: 8px 20px; background: var(--bad); color: #fff; font-size: 13px; }
 #ha.show { display: block; }
-#filter { width: 100%; margin-bottom: 6px; }
+#house { position: sticky; top: 16px; }
+#filter { width: 100%; }
+#entities { max-height: calc(100vh - 290px); min-height: 200px; overflow: auto; margin: 0 -6px; padding: 0 6px; }
+@media (max-width: 1100px) { #house { position: static; } #entities { max-height: 70vh; } }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 6px; }
+.chip { font-size: 12px; padding: 2px 9px; border-radius: 99px; }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.opts-row { display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.opts-row label { display: flex; gap: 4px; align-items: center; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; }
+#addto { margin: 8px 0 4px; padding: 6px 8px; background: var(--chip); border-radius: 6px; font-size: 12px; }
+#addto select { font-size: 12px; padding: 1px 4px; }
+details.grp { border-top: 1px solid var(--line); }
+details.grp:first-child { border-top: 0; }
+details.grp > summary { list-style: none; cursor: pointer; padding: 7px 2px; display: flex; gap: 6px; align-items: baseline; }
+details.grp > summary::-webkit-details-marker { display: none; }
+details.grp > summary:hover .gname { color: var(--accent); }
+.caret { display: inline-block; width: 10px; color: var(--muted); transition: transform .12s; flex: none; }
+details[open] > summary .caret { transform: rotate(90deg); }
+.gname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+summary .count { margin-left: auto; flex: none; }
+.cat { font-size: 11px; padding: 0 5px; border-radius: 4px; background: var(--chip); color: var(--muted); margin-left: 4px; }
+mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 2px; }
+button.add { white-space: nowrap; font-size: 12px; padding: 2px 8px; }
+button.add.done { opacity: .55; }
+.page.target { outline: 2px solid var(--accent); outline-offset: -1px; }
+.page .target-note { font-size: 12px; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -92,7 +117,24 @@ input, select { background: var(--input); border: 1px solid var(--line); border-
 
   <section class="panel" id="house">
     <h2 id="house-title">House</h2>
-    <input id="filter" type="search" placeholder="Filter by name, area or entity id">
+    <input id="filter" type="search" autocomplete="off" spellcheck="false"
+      placeholder="Search: kitchen light, plug power, battery…  ( / )"
+      title="Every word must match the name, device, area, entity id or type. Start a word with - to leave it out.">
+    <div id="kinds" class="chips"></div>
+    <div class="opts-row">
+      <label>Group by <select id="groupby">
+        <option value="device">Device</option><option value="area">Area</option><option value="kind">Type</option>
+      </select></label>
+      <label title="Signal strength, firmware, battery and settings entities that HA files under a device's Diagnostic and Configuration sections">
+        <input type="checkbox" id="hidediag"> Hide diagnostic &amp; settings</label>
+    </div>
+    <div id="addto"></div>
+    <div class="opts-row" style="margin:4px 0">
+      <span id="count"></span>
+      <span style="flex:1"></span>
+      <button class="linkish" id="expand">Expand all</button>
+      <button class="linkish" id="collapse">Collapse all</button>
+    </div>
     <div id="entities"></div>
   </section>
 </main>
@@ -116,6 +158,7 @@ const h = (tag, props = {}, ...kids) => {
 };
 
 let info = null, entities = {}, displays = [], selected = null, draft = null, dirty = false;
+let target = 0;          // the page of the selected display that + Add puts tiles on
 
 async function api(method, url, body) {
   const r = await fetch(url.replace(/^\//, ""), { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
@@ -158,6 +201,7 @@ function seen(t) {
 
 function select(id) {
   if (dirty && id !== selected && !confirm("Discard unsaved changes to this display?")) return;
+  if (id !== selected) target = 0;
   selected = id;
   const d = displays.find(x => x.id === id);
   draft = d ? structuredClone({ name: d.name, pages: d.pages }) : null;
@@ -172,7 +216,8 @@ function change() { dirty = true; $("#save").disabled = false; }
 function renderEditor() {
   const box = $("#editor");
   const d = displays.find(x => x.id === selected);
-  if (!d || !draft) { box.replaceChildren(h("div", { class: "empty" }, "Pick a display on the left.")); return; }
+  if (!d || !draft) { box.replaceChildren(h("div", { class: "empty" }, "Pick a display on the left.")); updateAddButtons(); return; }
+  target = Math.max(0, Math.min(target, draft.pages.length - 1));
   const total = draft.pages.reduce((n, p) => n + p.tiles.length, 0);
   const others = displays.filter(x => x.id !== d.id && x.pages.length);
   box.replaceChildren(
@@ -193,40 +238,39 @@ function renderEditor() {
       h("span", { style: "flex:1" }),
       h("span", { id: "msg", class: "small" }),
       h("button", { id: "save", class: "primary", onclick: save, disabled: !dirty }, "Save to display")));
+  updateAddButtons();
 }
 
 function renderPage(p, pi) {
-  const used = new Set(p.tiles.map(t => t.entity));
-  const groups = {};
-  const hasAreas = Object.values(entities).some(e => e.attributes.area);
-  for (const e of Object.values(entities))
-    if (!used.has(e.entity_id)) (groups[hasAreas ? (e.attributes.area || "No area") : e.domain] ||= []).push(e);
   const full = p.tiles.length >= info.limits.tiles_per_page;
-  return h("div", { class: "page" },
+  const isTarget = pi === target;
+  return h("div", { class: "page" + (isTarget ? " target" : ""), onclick: ev => {
+      // Clicking a page (not one of its controls) makes it the one the house panel adds to.
+      if (target !== pi && !ev.target.closest("input, button, select")) setTarget(pi);
+    } },
     h("div", { class: "row" },
-      h("input", { value: p.name, maxlength: info.limits.page_name, style: "flex:1", oninput: e => { p.name = e.target.value; change(); } }),
+      h("input", { value: p.name, maxlength: info.limits.page_name, style: "flex:1", oninput: e => { p.name = e.target.value; change(); renderAddTo(); } }),
       h("button", { class: "icon", title: "Move page up", disabled: pi === 0, onclick: () => movePage(pi, -1) }, "↑"),
       h("button", { class: "icon", title: "Remove page", onclick: () => { draft.pages.splice(pi, 1); change(); renderEditor(); } }, "✕")),
     p.tiles.length ? null : h("p", { class: "small muted" }, "No tiles on this page yet."),
     ...p.tiles.map((t, ti) => renderTile(p, t, ti)),
     h("div", { class: "row", style: "margin-top:8px" },
-      h("select", { disabled: full, onchange: e => { if (e.target.value) { p.tiles.push({ entity: e.target.value }); change(); renderEditor(); } } },
-        h("option", { value: "" }, full ? `Page full (${info.limits.tiles_per_page} tiles)` : "+ Add a tile…"),
-        ...Object.entries(groups).sort().map(([k, list]) => h("optgroup", { label: k },
-          ...list.sort((x, y) => nameOf(x.entity_id).localeCompare(nameOf(y.entity_id)))
-            .map(e => h("option", { value: e.entity_id }, `${iconOf(e)} ${nameOf(e.entity_id)} — ${e.entity_id}`)))))));
+      isTarget
+        ? h("span", { class: "target-note" }, full ? `Page full (${info.limits.tiles_per_page} tiles)` : "Adding here: use + Add in the house list")
+        : h("button", { disabled: full, onclick: () => { setTarget(pi); focusSearch(); } },
+            full ? `Page full (${info.limits.tiles_per_page} tiles)` : "+ Add tiles here")));
 }
 
 function renderTile(p, t, ti) {
   const e = entities[t.entity];
   const kind = e?.kind || t.entity.split(".")[0];
-  const area = areaOf(t.entity);
+  const where = [e?.attributes.device, areaOf(t.entity)].filter(x => x && x !== nameOf(t.entity)).join(" · ");
   const field = (key, ph, cls) => h("input", { class: cls, value: t[key] ?? "", placeholder: ph, title: ph,
     oninput: ev => { if (ev.target.value === "") delete t[key]; else t[key] = ev.target.value; change(); } });
   return h("div", { class: "tile" },
     h("span", { class: "kind", title: kind }, iconOf(e)),
     h("div", { class: "ent" },
-      h("div", {}, nameOf(t.entity) + (area ? ` · ${area}` : "")),
+      h("div", {}, nameOf(t.entity) + (where ? ` · ${where}` : "")),
       h("div", { class: "small muted", "data-state": t.entity }, `${t.entity} · ${describe(e)}`)),
     h("div", { class: "opts" },
       field("name", "Label on screen"),
@@ -237,7 +281,7 @@ function renderTile(p, t, ti) {
       h("button", { class: "icon", title: "Remove", onclick: () => { p.tiles.splice(ti, 1); change(); renderEditor(); } }, "✕")));
 }
 
-function addPage() { draft.pages.push({ name: `Page ${draft.pages.length + 1}`, tiles: [] }); change(); renderEditor(); }
+function addPage() { draft.pages.push({ name: `Page ${draft.pages.length + 1}`, tiles: [] }); target = draft.pages.length - 1; change(); renderEditor(); }
 function movePage(i, by) { const [p] = draft.pages.splice(i, 1); draft.pages.splice(i + by, 0, p); change(); renderEditor(); }
 function copyFrom(id) {
   const src = displays.find(x => x.id === id);
@@ -265,31 +309,226 @@ async function remove() {
 }
 
 // ------------------------------------------------------------ the house
-// With a real house there can be hundreds of entities: show them filtered,
-// and at most HOUSE_MAX rows.
-const HOUSE_MAX = 150;
-function matches(e, q) {
-  if (!q) return true;
-  return [e.entity_id, nameOf(e.entity_id), areaOf(e.entity_id)].some(x => x.toLowerCase().includes(q));
+// A real house has hundreds of entities. They are grouped (by device, area or
+// type) into collapsible groups, filtered by search, type and category, and
+// a group's rows are only built when it is open.
+const KIND_ORDER = ["light", "switch", "climate", "button", "sensor"];
+const KIND_LABEL = { light: "Lights, fans and covers", switch: "Switches and locks", climate: "Climate", button: "Scenes, scripts and buttons", sensor: "Sensors" };
+const KIND_CHIP = { light: "Lights", switch: "Switches", climate: "Climate", button: "Scenes", sensor: "Sensors" };
+// Extra words a search finds each type by.
+const KIND_WORDS = { light: "light lamp dimmer", switch: "switch toggle plug outlet", climate: "climate thermostat heating cooling",
+  button: "button scene script run", sensor: "sensor reading" };
+const DOMAIN_WORDS = { lock: "lock door", cover: "cover blind shade curtain shutter garage", fan: "fan", binary_sensor: "binary",
+  person: "person presence home away", device_tracker: "tracker presence", automation: "automation", weather: "weather forecast" };
+const ROW_MAX = 400;     // rows built at once while searching; further groups open on demand
+
+const PREFS_KEY = "had-hub-house";
+const prefs = { group: "device", kinds: [], hideDiag: true };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY)) || {}); } catch {}
+function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} }
+const openGroups = new Set();     // groups opened by hand, kept across re-renders
+let terms = [];                   // the current search words, for highlighting
+
+const norm = s => String(s ?? "").toLowerCase().replace(/[._\-]/g, " ");
+function parseQuery(q) {
+  const pos = [], neg = [];
+  for (const w of q.trim().split(/\s+/)) {
+    if (!w) continue;
+    const neg_ = w.length > 1 && w.startsWith("-");
+    const t = norm(neg_ ? w.slice(1) : w).trim();
+    if (t) (neg_ ? neg : pos).push(t);
+  }
+  return { pos, neg };
 }
-function renderEntities() {
-  const box = $("#entities");
-  const q = $("#filter").value.trim().toLowerCase();
-  const groups = {};
-  const shown = Object.values(entities).filter(e => matches(e, q))
-    .sort((a, b) => nameOf(a.entity_id).localeCompare(nameOf(b.entity_id)));
-  for (const e of shown.slice(0, HOUSE_MAX)) (groups[e.kind] ||= []).push(e);
-  const names = { light: "Lights, fans and covers", switch: "Switches and locks", climate: "Climate", sensor: "Sensors", button: "Scenes, scripts and buttons" };
-  box.replaceChildren(...["light", "switch", "climate", "button", "sensor"].filter(k => groups[k]).flatMap(k => [
-    h("div", { class: "group" }, names[k]),
-    ...groups[k].map(e => h("div", { class: "ent-row", id: "ent-" + e.entity_id })) ]),
-    shown.length > HOUSE_MAX ? h("p", { class: "small muted" }, `${shown.length - HOUSE_MAX} more — filter to find them.`) : null,
-    shown.length ? null : h("p", { class: "small muted" }, Object.keys(entities).length ? "Nothing matches." : "No entities yet."));
-  for (const g of Object.values(groups)) for (const e of g) renderEntity(e);
+// -1: no match. Otherwise higher is better: a word at the start of a word of
+// the name beats one inside the name, beats the device or area, beats the rest.
+function score(e, pos, neg) {
+  if (!pos.length && !neg.length) return 0;
+  const a = e.attributes;
+  const name = " " + norm(nameOf(e.entity_id)), place = norm([a.device, a.area].join(" "));
+  const hay = [name, place, norm([e.entity_id, e.domain, DOMAIN_WORDS[e.domain], KIND_WORDS[e.kind],
+    a.device_class, a.unit_of_measurement, a.entity_category, e.state].join(" "))].join(" | ");
+  if (neg.some(t => hay.includes(t))) return -1;
+  let s = 0;
+  for (const t of pos) {
+    if (!hay.includes(t)) return -1;
+    s += name.includes(" " + t) ? 4 : name.includes(t) ? 3 : place.includes(t) ? 2 : 1;
+  }
+  return s;
+}
+// Text with the search words marked.
+function hl(text, words = terms) {
+  text = String(text ?? "");
+  const n = norm(text);
+  if (!words.length || n.length !== text.length) return text;
+  const spans = [];
+  for (const w of words) for (let i = n.indexOf(w); i >= 0; i = n.indexOf(w, i + w.length)) spans.push([i, i + w.length]);
+  if (!spans.length) return text;
+  spans.sort((x, y) => x[0] - y[0]);
+  const out = [];
+  let at = 0;
+  for (const [from, to] of spans) {
+    if (to <= at) continue;
+    const f = Math.max(from, at);
+    if (f > at) out.push(text.slice(at, f));
+    out.push(h("mark", {}, text.slice(f, to)));
+    at = to;
+  }
+  out.push(text.slice(at));
+  return out;
+}
+const hasDevices = () => Object.values(entities).some(e => e.attributes.device_id);
+const hasAreas = () => Object.values(entities).some(e => e.attributes.area);
+function groupMode() {
+  if (prefs.group === "device" && !hasDevices()) return hasAreas() ? "area" : "kind";
+  if (prefs.group === "area" && !hasAreas()) return "kind";
+  return prefs.group;
+}
+const NO_DEVICE = "d:";
+function groupOf(e, mode) {
+  const a = e.attributes;
+  if (mode === "device") return a.device_id ? { key: "d:" + a.device_id, label: a.device, sub: a.area || "" }
+    : { key: NO_DEVICE, label: "Not part of a device", sub: "helpers, scenes, automations…", last: true };
+  if (mode === "area") return a.area ? { key: "a:" + a.area, label: a.area } : { key: "a:", label: "No area", last: true };
+  return { key: "k:" + e.kind, label: KIND_LABEL[e.kind] || e.kind, order: KIND_ORDER.indexOf(e.kind) };
+}
+// In a device's group, "Coffee maker Power" reads better as "Power".
+function shortName(e, mode) {
+  const n = nameOf(e.entity_id), d = e.attributes.device;
+  if (mode === "device" && d && n.length > d.length + 1 && n.toLowerCase().startsWith(d.toLowerCase() + " ")) {
+    const rest = n.slice(d.length + 1);
+    return rest[0].toUpperCase() + rest.slice(1);
+  }
+  return n;
 }
 
-function renderEntity(e) {
-  const row = document.getElementById("ent-" + e.entity_id);
+function renderChips() {
+  const all = !prefs.kinds.length;
+  $("#kinds").replaceChildren(
+    h("button", { class: "chip" + (all ? " on" : ""), onclick: () => setKinds([]) }, "All"),
+    ...KIND_ORDER.map(k => h("button", { class: "chip" + (!all && prefs.kinds.includes(k) ? " on" : ""),
+      title: KIND_LABEL[k], onclick: () => {
+        const ks = new Set(prefs.kinds);
+        ks.has(k) ? ks.delete(k) : ks.add(k);
+        setKinds(ks.size === KIND_ORDER.length ? [] : [...ks]);
+      } }, `${KIND_ICON[k]} ${KIND_CHIP[k]}`)));
+}
+function setKinds(ks) { prefs.kinds = ks; savePrefs(); renderChips(); renderEntities(); }
+
+function renderEntities(keepScroll = false) {
+  const box = $("#entities"), scroll = box.scrollTop;
+  const q = parseQuery($("#filter").value);
+  terms = q.pos;
+  const searching = q.pos.length + q.neg.length > 0;
+  const mode = groupMode();
+  $("#groupby").value = mode;
+  const kinds = new Set(prefs.kinds);
+  const groups = new Map();
+  let total = 0, shown = 0, hidden = 0;
+  for (const e of Object.values(entities)) {
+    total++;
+    if (kinds.size && !kinds.has(e.kind)) continue;
+    const s = score(e, q.pos, q.neg);
+    if (s < 0) continue;
+    if (prefs.hideDiag && e.attributes.entity_category) { hidden++; continue; }
+    const g = groupOf(e, mode);
+    if (!groups.has(g.key)) groups.set(g.key, { ...g, items: [], best: 0 });
+    const G = groups.get(g.key);
+    G.items.push([e, s]);
+    G.best = Math.max(G.best, s);
+    shown++;
+  }
+  const list = [...groups.values()].sort((x, y) =>
+    (searching ? y.best - x.best : 0) || (x.last ? 1 : 0) - (y.last ? 1 : 0)
+    || (x.order ?? 0) - (y.order ?? 0) || x.label.localeCompare(y.label));
+  let rows = 0;
+  const els = list.map(g => {
+    g.items.sort(([a, sa], [b, sb]) => (sb - sa) || shortName(a, mode).localeCompare(shortName(b, mode)));
+    // Searching opens every group that fits; otherwise only the ones opened by hand.
+    const open = searching ? rows + g.items.length <= ROW_MAX || rows === 0 : openGroups.has(g.key) || list.length === 1;
+    if (open) rows += g.items.length;
+    const det = h("details", { class: "grp", open },
+      h("summary", {},
+        h("span", { class: "caret" }, "▸"),
+        h("span", { class: "gname" }, hl(g.label)),
+        g.sub ? h("span", { class: "small muted" }, hl(g.sub)) : null,
+        h("span", { class: "count small muted" }, String(g.items.length))));
+    const fill = () => {
+      if (det.dataset.filled) return;
+      det.dataset.filled = "1";
+      for (const [e] of g.items) { const row = h("div", { class: "ent-row", id: "ent-" + e.entity_id }); det.append(row); renderEntity(e, row); }
+    };
+    det.addEventListener("toggle", () => {
+      if (det.open) fill();
+      if (!searching) det.open ? openGroups.add(g.key) : openGroups.delete(g.key);
+    });
+    if (open) fill();
+    return det;
+  });
+  box.replaceChildren(...els);
+  if (!shown) box.append(h("p", { class: "small muted" }, total ? "Nothing matches." : "No entities yet."));
+  if (keepScroll) box.scrollTop = scroll;
+  const noun = (mode === "device" ? "device" : mode === "area" ? "area" : "type") + (list.length === 1 ? "" : "s");
+  $("#count").replaceChildren(total ? `${shown} of ${total} entities in ${list.length} ${noun}` : "");
+  if (hidden) $("#count").append(" · ", h("button", { class: "linkish", onclick: () => setHideDiag(false) },
+    `show ${hidden} diagnostic & settings`));
+  renderAddTo();
+}
+function setHideDiag(v) { prefs.hideDiag = v; $("#hidediag").checked = v; savePrefs(); renderEntities(true); }
+function setGroupsOpen(open) {
+  for (const d of document.querySelectorAll("#entities details.grp")) d.open = open;
+  if (!open) openGroups.clear();
+}
+function focusSearch() {
+  const f = $("#filter");
+  if (matchMedia("(max-width: 1100px)").matches) $("#house").scrollIntoView({ behavior: "smooth", block: "start" });
+  f.focus({ preventScroll: true });
+  f.select();
+}
+
+// ------------------------------------------------------------ adding tiles from the house
+function setTarget(pi) { target = pi; renderEditor(); }
+function renderAddTo() {
+  const box = $("#addto");
+  const d = displays.find(x => x.id === selected);
+  if (!d || !draft) { box.replaceChildren(h("span", { class: "muted" }, "Pick a display to add tiles to it.")); return; }
+  const dname = draft.name || d.info?.name || d.id;
+  box.replaceChildren(
+    "+ Add puts tiles on ",
+    draft.pages.length
+      ? h("select", { onchange: ev => setTarget(+ev.target.value) },
+          ...draft.pages.map((p, i) => h("option", { value: i, selected: i === target },
+            `${p.name || "Page " + (i + 1)} (${p.tiles.length}/${info.limits.tiles_per_page})`)))
+      : h("b", {}, "a new page"),
+    ` of ${dname}`);
+}
+function addButton(e) {
+  if (!e || !draft || !displays.find(x => x.id === selected)) return null;
+  const p = draft.pages[target];
+  if (p?.tiles.some(t => t.entity === e.entity_id))
+    return h("button", { class: "add done", title: `Already on ${p.name}. Click to take it off.`,
+      onclick: () => { p.tiles = p.tiles.filter(t => t.entity !== e.entity_id); change(); renderEditor(); } }, "✓ Added");
+  const total = draft.pages.reduce((n, pg) => n + pg.tiles.length, 0);
+  const elsewhere = draft.pages.find(pg => pg.tiles.some(t => t.entity === e.entity_id));
+  let why = "";
+  if (total >= info.limits.tiles) why = `The display is full (${info.limits.tiles} tiles)`;
+  else if (p && p.tiles.length >= info.limits.tiles_per_page) why = `${p.name} is full: add a page, or pick another`;
+  else if (!p && draft.pages.length >= info.limits.pages) why = "No room for another page";
+  return h("button", { class: "add", disabled: !!why, onclick: () => addTile(e.entity_id),
+    title: why || (elsewhere ? `Also on ${elsewhere.name}. ` : "") + `Add to ${p ? p.name : "a new page"}` }, "+ Add");
+}
+function addTile(entity_id) {
+  if (!draft.pages[target]) { draft.pages.push({ name: `Page ${draft.pages.length + 1}`, tiles: [] }); target = draft.pages.length - 1; }
+  draft.pages[target].tiles.push({ entity: entity_id });
+  change();
+  renderEditor();      // also refreshes the add buttons; the house list itself stays put
+}
+function updateAddButtons() {
+  for (const slot of document.querySelectorAll("#entities .addslot")) slot.replaceChildren(addButton(entities[slot.dataset.id]) || "");
+  renderAddTo();
+}
+
+function renderEntity(e, row = document.getElementById("ent-" + e.entity_id)) {
   if (!row) return;
   // Leave a control alone while someone is dragging it.
   if (row.contains(document.activeElement) && document.activeElement.type === "range") return;
@@ -324,10 +563,18 @@ function renderEntity(e) {
         : h("span", { class: "val" }, e.state),
       h("span", { class: "muted small" }, a.unit_of_measurement || ""));
   }
+  const mode = groupMode();
+  // Where it is, unless the group heading already says so.
+  const where = mode === "device" ? [] : mode === "area" ? [a.device] : [a.device, a.area];
+  ctl.append(h("span", { class: "addslot", "data-id": e.entity_id }, addButton(e) || ""));
   row.replaceChildren(
-    h("span", { class: "kind" }, iconOf(e)),
-    h("div", { class: "ent" }, h("div", {}, nameOf(e.entity_id)),
-      h("div", { class: "small muted" }, (e.kind === "climate" ? `${a.current_temperature}° now · ${a.hvac_action}` : e.entity_id) + (a.area ? ` · ${a.area}` : ""))),
+    h("span", { class: "kind", title: e.domain }, iconOf(e)),
+    h("div", { class: "ent" },
+      h("div", { title: nameOf(e.entity_id) }, hl(shortName(e, mode)),
+        a.entity_category ? h("span", { class: "cat" }, a.entity_category === "config" ? "setting" : a.entity_category) : null),
+      h("div", { class: "small muted", title: e.entity_id },
+        e.kind === "climate" ? `${a.current_temperature}° now · ${a.hvac_action} · ` : "",
+        hl(e.entity_id), ...where.filter(Boolean).flatMap(w => [" · ", hl(w)]))),
     ctl);
 }
 
@@ -354,7 +601,7 @@ function connectLive() {
     } else if (m.t === "entity") {
       const isNew = !entities[m.entity.entity_id];
       entities[m.entity.entity_id] = m.entity;
-      if (isNew) renderEntities(); else renderEntity(m.entity);
+      if (isNew) renderEntities(true); else renderEntity(m.entity);
       for (const el of document.querySelectorAll(`[data-state="${m.entity.entity_id}"]`)) el.textContent = `${m.entity.entity_id} · ${describe(m.entity)}`;
     }
   };
@@ -377,7 +624,18 @@ async function loadEntities() {
   info = await api("GET", "/api/info");
   showStatus();
   $("#house-title").textContent = info.backend === "mock" ? "Mock house" : "House";
-  $("#filter").addEventListener("input", renderEntities);
+  $("#filter").addEventListener("input", () => { $("#entities").scrollTop = 0; renderEntities(); });
+  $("#filter").addEventListener("keydown", ev => { if (ev.key === "Escape") { ev.target.value = ""; renderEntities(); } });
+  $("#groupby").addEventListener("change", ev => { prefs.group = ev.target.value; savePrefs(); openGroups.clear(); renderEntities(); });
+  $("#hidediag").checked = prefs.hideDiag;
+  $("#hidediag").addEventListener("change", ev => setHideDiag(ev.target.checked));
+  $("#expand").addEventListener("click", () => setGroupsOpen(true));
+  $("#collapse").addEventListener("click", () => setGroupsOpen(false));
+  // "/" jumps to the search, as on many sites.
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "/" && !ev.target.closest("input, textarea, select")) { ev.preventDefault(); focusSearch(); }
+  });
+  renderChips();
   await loadEntities();
   connectLive();
   // Home Assistant can come and go (restarts, updates): keep the banner true,
