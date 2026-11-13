@@ -1,0 +1,3 @@
+# 2.8" Cheap Yellow Display (ESP32-2432S028R, ELEGOO E32R28T).
+# On top of the top-level sdkconfig.defaults (platformio.ini).
+CONFIG_HAD_BOARD_CYD28=y

@@ -46,60 +46,44 @@ config HAD_TZ
         For example "GMT0BST,M3.5.0/1,M10.5.0" for the UK or
         "CET-1CEST,M3.5.0,M10.5.0/3" for central Europe.
 
-menu "Display wiring"
+choice HAD_BOARD
+    prompt "Board"
+    default HAD_BOARD_CROWPANEL_P4_9 if IDF_TARGET_ESP32P4
+    default HAD_BOARD_CYD28
+    help
+        Which display board this is built for: its panel, touch controller
+        and wiring (components/board/boards.c). Each board also has its own
+        sdkconfig defaults under boards/, which pick this for you.
 
-    config HAD_LCD_SCLK_GPIO
-        int "LCD SPI clock GPIO"
-        default 14
-
-    config HAD_LCD_MOSI_GPIO
-        int "LCD SPI MOSI GPIO"
-        default 13
-
-    config HAD_LCD_CS_GPIO
-        int "LCD chip select GPIO"
-        default 15
-
-    config HAD_LCD_DC_GPIO
-        int "LCD data/command GPIO"
-        default 2
-
-    config HAD_LCD_BL_GPIO
-        int "LCD backlight GPIO (high = on)"
-        default 21
-
-    config HAD_LCD_INVERT
-        bool "Invert panel colours"
-        default n
+    config HAD_BOARD_CYD28
+        bool "2.8\" Cheap Yellow Display (ESP32-2432S028R, ELEGOO E32R28T)"
+        depends on IDF_TARGET_ESP32
+    config HAD_BOARD_ST7796R
+        bool "3.5\"/4.0\" ST7796, resistive touch (Sunton ESP32-3248S035R, ELEGOO E32R35T, E32R40T)"
+        depends on IDF_TARGET_ESP32
         help
-            Turn on if colours come out as a negative (some CYD batches).
+            These boards are wired the same: ST7796 480x320 on SPI2, XPT2046
+            touch on the same bus. (ELEGOO's E32N35T and E32N40T are the same
+            boards without touch, which this firmware needs.)
+    config HAD_BOARD_SUNTON35C
+        bool "3.5\" Sunton ESP32-3248S035C (capacitive touch, GT911)"
+        depends on IDF_TARGET_ESP32
+    config HAD_BOARD_CROWPANEL_P4_9
+        bool "9\" Elecrow CrowPanel Advanced ESP32-P4 (1024x600)"
+        depends on IDF_TARGET_ESP32P4
+endchoice
 
-    config HAD_LCD_MIRROR_X
-        bool "Mirror the picture left to right"
-        default n
-        help
-            Turn on if text comes out backwards.
+config HAD_LCD_INVERT
+    bool "Invert the panel's colours (from the board's default)"
+    default n
+    help
+        Turn on if colours come out as a negative. Batches of the same board
+        sometimes differ.
 
-    config HAD_TOUCH_SCLK_GPIO
-        int "Touch SPI clock GPIO"
-        default 25
-
-    config HAD_TOUCH_MOSI_GPIO
-        int "Touch SPI MOSI GPIO"
-        default 32
-
-    config HAD_TOUCH_MISO_GPIO
-        int "Touch SPI MISO GPIO"
-        default 39
-
-    config HAD_TOUCH_CS_GPIO
-        int "Touch chip select GPIO"
-        default 33
-
-    config HAD_TOUCH_IRQ_GPIO
-        int "Touch interrupt GPIO (low = touched)"
-        default 36
-
-endmenu
+config HAD_LCD_MIRROR_X
+    bool "Mirror the picture left to right (from the board's default)"
+    default n
+    help
+        Turn on if text comes out backwards.
 
 endmenu

@@ -44,7 +44,8 @@ sidebar. For HA Container or Core, use Docker or a virtualenv instead; see
 **2. Flash a display:**
 
 ```sh
-scripts/flash.sh             # needs PlatformIO; or esptool with a release .bin
+scripts/flash.sh                  # the 2.8" board; needs PlatformIO, or esptool with a release .bin
+BOARD=st7796r scripts/flash.sh    # 3.5"/4.0" resistive; sunton35c for the capacitive 3.5"
 ```
 
 **3. On the display:** calibrate the touch, then gear → **WiFi**. It finds
@@ -85,14 +86,25 @@ Details for every domain, device class and threshold:
 
 ## The hardware
 
-The ESP32-2432S028R ("Cheap Yellow Display"), or clones such as the ELEGOO
-2.8" E32R28T: an ESP32-WROOM-32 with 4 MB flash and no PSRAM, an ILI9341
-320×240 panel, XPT2046 resistive touch, and a CH340 USB-serial chip.
-Powered over USB.
+ESP32 touchscreen boards with an ESP32-WROOM-32, 4 MB flash, no PSRAM and a
+CH340 USB-serial chip, powered over USB. Each board family is its own build:
 
-- **Pins** (defaults in menuconfig): LCD on SPI2 (SCLK 14, MOSI 13, CS 15,
-  DC 2, backlight 21). Touch is bit-banged on its own pins (SCLK 25,
-  MOSI 32, MISO 39, CS 33, IRQ 36).
+| Build (`BOARD`) | Boards | Screen | Touch |
+|---|---|---|---|
+| `cyd` | ESP32-2432S028R "Cheap Yellow Display", ELEGOO E32R28T (2.8") | ILI9341 320×240 | XPT2046 resistive |
+| `st7796r` | Sunton ESP32-3248S035R (3.5"), ELEGOO / LCDwiki E32R35T (3.5") and E32R40T (4.0") | ST7796 480×320 | XPT2046 resistive |
+| `sunton35c` | Sunton ESP32-3248S035C (3.5") | ST7796 480×320 | GT911 capacitive |
+
+Bigger screens show the same 8 tiles a page, drawn bigger. ELEGOO's
+E32N35T and E32N40T are the same boards without touch, which the firmware
+needs. Pins and quirks for each board are in
+[components/board/boards.c](components/board/boards.c).
+
+On the 2.8" board:
+
+- **Pins:** LCD on SPI2 (SCLK 14, MOSI 13, CS 15, DC 2, backlight 21).
+  Touch is bit-banged on its own pins (SCLK 25, MOSI 32, MISO 39, CS 33,
+  IRQ 36).
 - **Free for your own use:** IO27 on the 4-pin connector (IO18/19/23 there
   are shared with the microSD slot), and IO22 and IO35 on the other one.
   IO35 is input-only. The board's RGB LED is on IO4/16/17 and the light
@@ -107,7 +119,8 @@ Powered over USB.
 | `main/`, `components/` | The firmware (ESP-IDF 5.4, LVGL 9.2) |
 | `components/netcfg` | WiFi (5 networks), setup access point and page, mDNS, SNTP, link watchdog |
 | `components/hub` | The hub link: discovery, WebSocket, tile model, `http://<display>.local/hub` |
-| `components/display` | LCD, touch and calibration, the dashboard, Setup and WiFi screens |
+| `components/board` | Each board's panel, touch controller and pins |
+| `components/display` | LVGL, touch calibration, the dashboard, Setup and WiFi screens, scaled to the screen |
 | `hub/` | The hub (Python, aiohttp), and the Home Assistant add-on (`config.yaml`, `Dockerfile`) |
 | `hub/had_hub/backends` | Home Assistant and mock backends |
 | `hub/had_hub/static` | The admin page and the virtual display |
@@ -120,9 +133,9 @@ Powered over USB.
 
 ```sh
 make help       # all the targets
-make firmware   # build; also dist/home-automation-display-<ver>.bin
-make flash      # build and flash (PORT=/dev/cu.usbserial-110)
-make monitor    # serial log
+make firmware   # build every board; also dist/home-automation-display-<ver>-<board>.bin
+make flash      # build and flash (BOARD=st7796r, PORT=/dev/cu.usbserial-110)
+make monitor    # serial log (BOARD=...)
 make test       # hub tests + firmware build
 make addon      # the add-on image, built the way the Supervisor builds it
 ```

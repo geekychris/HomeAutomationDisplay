@@ -7,6 +7,9 @@
 //   | ===o----- | | Good      |
 //   +-----------+ +-----------+
 //
+// Those are the sizes at 320x240. Bigger screens scale the lot (ui.h), and
+// wide ones (the 9") put four tiles across, so a page's 8 fit without scrolling.
+//
 // Only the current page's tiles exist as LVGL objects; the rest of the
 // layout lives in the hub model. An LVGL timer watches the model and
 // rebuilds the page when a new layout arrives, or redraws a tile when its
@@ -19,12 +22,8 @@
 #include <time.h>
 #include "esp_log.h"
 #include "netcfg.h"
+#include "ui.h"
 
-#define W 320
-#define H 240
-#define BAR_H 30
-#define TILE_W 151
-#define TILE_H 99
 #define PER_PAGE 8                  // the hub's MAX_TILES_PER_PAGE
 #define SEND_AFTER_MS 800           // thermostat: send the target once the taps stop
 
@@ -63,6 +62,7 @@ static lv_timer_t *s_overlay_timer, *s_toast_timer;
 static void (*s_on_settings)(void);
 static lv_style_t st_card, st_name, st_small, st_btn;
 static char s_title_txt[HUB_NAME_LEN];
+static int s_bar_h, s_gap, s_tile_w, s_tile_h;     // set in dashboard_build() for this screen
 
 // ---------------------------------------------------------------- small things
 
@@ -228,7 +228,7 @@ static void update(ui_tile_t *u, const hub_tile_t *t)
         lv_obj_set_style_text_color(u->lvl, lv_color_hex(t->lvl ? c : C_MUTED), 0);
         set_text(u->val, t->ok ? t->val : "--");
         set_text(u->unit, t->ok ? t->unit : "");
-        lv_obj_align_to(u->unit, u->val, LV_ALIGN_OUT_RIGHT_BOTTOM, 4, -4);
+        lv_obj_align_to(u->unit, u->val, LV_ALIGN_OUT_RIGHT_BOTTOM, PX(4), -PX(4));
         static const char *const LV[] = { "", "Good", "Fair", "Poor" };
         set_text(u->lvl, !t->ok ? "unavailable" : t->txt[0] ? t->txt : LV[t->lvl & 3]);
         break;
@@ -276,13 +276,13 @@ static void build_tile(ui_tile_t *u, const hub_tile_t *t)
     snprintf(u->entity, sizeof(u->entity), "%s", t->entity);
     u->card = lv_obj_create(s_grid);
     lv_obj_add_style(u->card, &st_card, 0);
-    lv_obj_set_size(u->card, t->kind == HUB_CLIMATE ? W - 12 : TILE_W, TILE_H);
+    lv_obj_set_size(u->card, t->kind == HUB_CLIMATE ? UI.w - 2 * s_gap : s_tile_w, s_tile_h);
     lv_obj_remove_flag(u->card, LV_OBJ_FLAG_SCROLLABLE);
     u->name = label(u->card, t->kind == HUB_LIGHT || t->kind == HUB_SWITCH || t->kind == HUB_BUTTON
                              ? &st_name : &st_small, NULL);
     lv_label_set_text(u->name, t->name);
     lv_label_set_long_mode(u->name, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(u->name, t->kind == HUB_CLIMATE ? 140 : TILE_W - 40);
+    lv_obj_set_width(u->name, t->kind == HUB_CLIMATE ? PX(140) : s_tile_w - PX(40));
 
     switch (t->kind) {
     case HUB_LIGHT:
@@ -291,22 +291,22 @@ static void build_tile(ui_tile_t *u, const hub_tile_t *t)
         lv_label_set_text(pwr, icon_symbol(t->icon));
         lv_obj_align(pwr, LV_ALIGN_TOP_RIGHT, 0, 0);
         u->sub = label(u->card, &st_small, NULL);
-        lv_obj_align(u->sub, LV_ALIGN_TOP_LEFT, 0, 22);
+        lv_obj_align(u->sub, LV_ALIGN_TOP_LEFT, 0, PX(22));
         lv_obj_add_flag(u->card, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(u->card, on_card, LV_EVENT_CLICKED, u);
         if (t->kind == HUB_LIGHT && t->dimmable) {
             u->slider = lv_slider_create(u->card);
             lv_slider_set_range(u->slider, 0, 100);
-            lv_obj_set_size(u->slider, TILE_W - 36, 8);
-            lv_obj_align(u->slider, LV_ALIGN_BOTTOM_MID, 0, -6);
-            lv_obj_set_ext_click_area(u->slider, 12);
+            lv_obj_set_size(u->slider, s_tile_w - PX(36), PX(8));
+            lv_obj_align(u->slider, LV_ALIGN_BOTTOM_MID, 0, -PX(6));
+            lv_obj_set_ext_click_area(u->slider, PX(12));
             lv_obj_set_style_bg_color(u->slider, lv_color_hex(C_ACCENT), LV_PART_INDICATOR);
             lv_obj_set_style_bg_color(u->slider, lv_color_hex(0xffffff), LV_PART_KNOB);
             lv_obj_add_event_cb(u->slider, on_slider, LV_EVENT_VALUE_CHANGED, u);
             lv_obj_add_event_cb(u->slider, on_slider, LV_EVENT_RELEASED, u);
         } else if (t->kind == HUB_SWITCH) {
             u->sw = lv_switch_create(u->card);
-            lv_obj_set_size(u->sw, 50, 26);
+            lv_obj_set_size(u->sw, PX(50), PX(26));
             lv_obj_align(u->sw, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
             lv_obj_remove_flag(u->sw, LV_OBJ_FLAG_CLICKABLE);   // the whole card is the button
             lv_obj_set_style_bg_color(u->sw, lv_color_hex(C_ACCENT), LV_PART_INDICATOR | LV_STATE_CHECKED);
@@ -324,30 +324,32 @@ static void build_tile(ui_tile_t *u, const hub_tile_t *t)
         break;
     }
     case HUB_SENSOR:
-        u->val = label(u->card, NULL, &lv_font_montserrat_28);
-        lv_obj_align(u->val, LV_ALIGN_TOP_LEFT, 0, 22);
-        u->unit = label(u->card, &st_small, &lv_font_montserrat_14);
+        u->val = label(u->card, NULL, UI.big);
+        lv_obj_align(u->val, LV_ALIGN_TOP_LEFT, 0, PX(22));
+        u->unit = label(u->card, &st_small, UI.body);
         u->lvl = label(u->card, &st_small, NULL);
         lv_obj_align(u->lvl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         break;
     case HUB_CLIMATE: {
-        u->val = label(u->card, NULL, &lv_font_montserrat_28);       // current temperature
-        lv_obj_align(u->val, LV_ALIGN_TOP_LEFT, 0, 20);
+        u->val = label(u->card, NULL, UI.big);                       // current temperature
+        lv_obj_align(u->val, LV_ALIGN_TOP_LEFT, 0, PX(20));
         u->lvl = label(u->card, &st_small, NULL);                     // heating / idle
         lv_obj_align(u->lvl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-        lv_obj_t *minus = flat_button(u->card, LV_SYMBOL_MINUS, on_minus, u);
-        lv_obj_set_size(minus, 40, 38);
-        lv_obj_set_pos(minus, 150, 0);
-        u->tgt = label(u->card, NULL, &lv_font_montserrat_20);
-        lv_obj_set_width(u->tgt, 62);
-        lv_obj_set_style_text_align(u->tgt, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(u->tgt, 190, 9);
+        // The controls keep to the right edge, however wide the row is:
+        // [-] 20.5° [+] on top, the mode button under them.
         lv_obj_t *plus = flat_button(u->card, LV_SYMBOL_PLUS, on_plus, u);
-        lv_obj_set_size(plus, 40, 38);
-        lv_obj_set_pos(plus, 252, 0);
+        lv_obj_set_size(plus, PX(40), PX(38));
+        lv_obj_align(plus, LV_ALIGN_TOP_RIGHT, 0, 0);
+        u->tgt = label(u->card, NULL, UI.mid);
+        lv_obj_set_width(u->tgt, PX(62));
+        lv_obj_set_style_text_align(u->tgt, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(u->tgt, LV_ALIGN_TOP_RIGHT, -PX(40), PX(9));
+        lv_obj_t *minus = flat_button(u->card, LV_SYMBOL_MINUS, on_minus, u);
+        lv_obj_set_size(minus, PX(40), PX(38));
+        lv_obj_align(minus, LV_ALIGN_TOP_RIGHT, -PX(102), 0);
         u->mode = flat_button(u->card, "--", on_mode, u);
-        lv_obj_set_size(u->mode, 142, 32);
-        lv_obj_set_pos(u->mode, 150, 51);
+        lv_obj_set_size(u->mode, PX(142), PX(32));
+        lv_obj_align(u->mode, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
         break;
     }
     }
@@ -372,10 +374,10 @@ static void build_page(const hub_layout_t *L)
 {
     clear_page();
     if (L->npages == 0) {
-        s_msg = label(s_grid, &st_small, &lv_font_montserrat_14);
-        lv_obj_set_width(s_msg, W - 24);
+        s_msg = label(s_grid, &st_small, UI.body);
+        lv_obj_set_width(s_msg, UI.w - PX(24));
         lv_obj_set_style_text_align(s_msg, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_pad_top(s_msg, 60, 0);
+        lv_obj_set_style_pad_top(s_msg, PX(60), 0);
     } else {
         for (int i = 0; i < L->ntiles && s_nui < PER_PAGE; i++) {
             if (L->tiles[i].page != s_page) continue;
@@ -473,17 +475,17 @@ static void styles(void)
     lv_style_set_bg_color(&st_card, lv_color_hex(C_CARD));
     lv_style_set_bg_opa(&st_card, LV_OPA_COVER);
     lv_style_set_border_width(&st_card, 0);
-    lv_style_set_radius(&st_card, 8);
-    lv_style_set_pad_all(&st_card, 8);
+    lv_style_set_radius(&st_card, PX(8));
+    lv_style_set_pad_all(&st_card, PX(8));
     lv_style_set_text_color(&st_card, lv_color_hex(0xf0f0f0));
     lv_style_init(&st_name);
-    lv_style_set_text_font(&st_name, &lv_font_montserrat_14);
+    lv_style_set_text_font(&st_name, UI.body);
     lv_style_init(&st_small);
-    lv_style_set_text_font(&st_small, &lv_font_montserrat_12);
+    lv_style_set_text_font(&st_small, UI.small);
     lv_style_set_text_color(&st_small, lv_color_hex(C_MUTED));
     lv_style_init(&st_btn);
     lv_style_set_bg_color(&st_btn, lv_color_hex(C_BTN));
-    lv_style_set_radius(&st_btn, 6);
+    lv_style_set_radius(&st_btn, PX(6));
     lv_style_set_shadow_width(&st_btn, 0);
     lv_style_set_pad_all(&st_btn, 0);
 }
@@ -492,7 +494,7 @@ static lv_obj_t *bar_button(lv_obj_t *bar, const char *sym, lv_event_cb_t cb, in
 {
     lv_obj_t *b = lv_button_create(bar);
     lv_obj_remove_style_all(b);
-    lv_obj_set_size(b, 30, BAR_H);
+    lv_obj_set_size(b, PX(30), s_bar_h);
     lv_obj_set_pos(b, x, 0);
     lv_obj_t *l = lv_label_create(b);
     lv_label_set_text(l, sym);
@@ -505,72 +507,78 @@ static lv_obj_t *bar_button(lv_obj_t *bar, const char *sym, lv_event_cb_t cb, in
 void dashboard_build(lv_obj_t *scr, void (*on_settings)(void))
 {
     s_on_settings = on_settings;
+    s_bar_h = PX(30);
+    s_gap = PX(6);
+    s_tile_w = (UI.w - (UI.cols + 1) * s_gap) / UI.cols;
+    // Two across: 99 px tiles (scaled), the page scrolls. Four across: two
+    // rows that fill the screen, so all 8 show at once.
+    s_tile_h = UI.cols >= 4 ? (UI.h - s_bar_h - 3 * s_gap) / 2 : PX(99);
     styles();
     lv_obj_set_style_bg_color(scr, lv_color_hex(C_BG), 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *bar = lv_obj_create(scr);
     lv_obj_remove_style_all(bar);
-    lv_obj_set_size(bar, W, BAR_H);
+    lv_obj_set_size(bar, UI.w, s_bar_h);
     lv_obj_set_style_bg_color(bar, lv_color_hex(C_BAR), 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_remove_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     s_prev = bar_button(bar, LV_SYMBOL_LEFT, on_prev, 0);
     s_title = lv_label_create(bar);
-    lv_obj_set_width(s_title, 140);
+    lv_obj_set_width(s_title, PX(140));
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(s_title, 30, 7);
+    lv_obj_align(s_title, LV_ALIGN_LEFT_MID, PX(30), 0);
     lv_label_set_text(s_title, "");
-    s_next = bar_button(bar, LV_SYMBOL_RIGHT, on_next, 170);
-    s_clock = label(bar, &st_small, &lv_font_montserrat_14);
+    s_next = bar_button(bar, LV_SYMBOL_RIGHT, on_next, PX(170));
+    s_clock = label(bar, &st_small, UI.body);
     lv_label_set_text(s_clock, "--:--");
-    lv_obj_set_pos(s_clock, 222, 7);
+    lv_obj_align(s_clock, LV_ALIGN_LEFT_MID, UI.w - PX(98), 0);
     s_dot = lv_obj_create(bar);
     lv_obj_remove_style_all(s_dot);
-    lv_obj_set_size(s_dot, 8, 8);
+    lv_obj_set_size(s_dot, PX(8), PX(8));
     lv_obj_set_style_radius(s_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(s_dot, LV_OPA_COVER, 0);
-    lv_obj_set_pos(s_dot, 272, 11);
-    bar_button(bar, LV_SYMBOL_SETTINGS, on_gear, W - 34);
+    lv_obj_align(s_dot, LV_ALIGN_LEFT_MID, UI.w - PX(48), 0);
+    bar_button(bar, LV_SYMBOL_SETTINGS, on_gear, UI.w - PX(34));
 
     s_grid = lv_obj_create(scr);
     lv_obj_remove_style_all(s_grid);
-    lv_obj_set_pos(s_grid, 0, BAR_H);
-    lv_obj_set_size(s_grid, W, H - BAR_H);
+    lv_obj_set_pos(s_grid, 0, s_bar_h);
+    lv_obj_set_size(s_grid, UI.w, UI.h - s_bar_h);
     lv_obj_set_flex_flow(s_grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_style_pad_all(s_grid, 6, 0);
-    lv_obj_set_style_pad_gap(s_grid, 6, 0);
+    lv_obj_set_style_pad_all(s_grid, s_gap, 0);
+    lv_obj_set_style_pad_gap(s_grid, s_gap, 0);
     lv_obj_set_scroll_dir(s_grid, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_grid, LV_SCROLLBAR_MODE_ACTIVE);
 
     // On top of everything: the identify card and the error toast.
     s_overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_overlay);
-    lv_obj_set_size(s_overlay, W, H);
+    lv_obj_set_size(s_overlay, UI.w, UI.h);
     lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x0a0a0a), 0);
     lv_obj_set_style_bg_opa(s_overlay, LV_OPA_90, 0);
     lv_obj_set_flex_flow(s_overlay, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_overlay, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(s_overlay, 8, 0);
+    lv_obj_set_style_pad_row(s_overlay, PX(8), 0);
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(s_overlay, on_overlay, LV_EVENT_CLICKED, NULL);
     lv_label_set_text(label(s_overlay, NULL, NULL), "This is");
-    lv_obj_t *big = label(s_overlay, NULL, &lv_font_montserrat_28);
+    lv_obj_t *big = label(s_overlay, NULL, UI.big);
     lv_obj_set_style_text_color(big, lv_color_hex(C_ACCENT), 0);
-    lv_obj_set_style_text_align(label(s_overlay, &st_small, &lv_font_montserrat_14), LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(label(s_overlay, &st_small, UI.body), LV_TEXT_ALIGN_CENTER, 0);
     s_overlay_timer = lv_timer_create(overlay_hide, 10000, NULL);
     lv_timer_pause(s_overlay_timer);
 
     s_toast = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_toast);
-    lv_obj_set_size(s_toast, W - 20, LV_SIZE_CONTENT);
-    lv_obj_align(s_toast, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_size(s_toast, UI.w - PX(20), LV_SIZE_CONTENT);
+    lv_obj_align(s_toast, LV_ALIGN_BOTTOM_MID, 0, -PX(8));
     lv_obj_set_style_bg_color(s_toast, lv_color_hex(0x7a2a22), 0);
     lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_toast, 6, 0);
-    lv_obj_set_style_pad_all(s_toast, 6, 0);
-    lv_obj_t *tl = label(s_toast, NULL, &lv_font_montserrat_12);
+    lv_obj_set_style_radius(s_toast, PX(6), 0);
+    lv_obj_set_style_pad_all(s_toast, PX(6), 0);
+    lv_obj_t *tl = label(s_toast, NULL, UI.small);
     lv_obj_set_width(tl, lv_pct(100));
     lv_label_set_long_mode(tl, LV_LABEL_LONG_WRAP);
     lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);

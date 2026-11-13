@@ -1,0 +1,3 @@
+# 3.5"/4.0" ST7796 with resistive touch (Sunton ESP32-3248S035R, ELEGOO E32R35T, E32R40T).
+# On top of the top-level sdkconfig.defaults (platformio.ini).
+CONFIG_HAD_BOARD_ST7796R=y

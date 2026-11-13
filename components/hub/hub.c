@@ -1,5 +1,6 @@
 // The link to the hub. See hub.h; the messages are in docs/protocol.md.
 #include "hub.h"
+#include "board.h"
 #include "sdkconfig.h"
 #include <math.h>
 #include <stdio.h>
@@ -219,10 +220,12 @@ static void on_message(const char *text)
 
 static void send_hello(void)
 {
-    char buf[200];
+    char buf[240];
+    const board_info_t *bd = board();
     const int n = snprintf(buf, sizeof(buf),
-        "{\"t\":\"hello\",\"id\":\"%s\",\"name\":\"%s\",\"fw\":\"%s\",\"proto\":%d,\"w\":320,\"h\":240}",
-        s_id, netcfg_hostname(), esp_app_get_description()->version, PROTO);
+        "{\"t\":\"hello\",\"id\":\"%s\",\"name\":\"%s\",\"fw\":\"%s\",\"proto\":%d,"
+        "\"w\":%d,\"h\":%d,\"board\":\"%s\"}",
+        s_id, netcfg_hostname(), esp_app_get_description()->version, PROTO, bd->w, bd->h, bd->id);
     esp_websocket_client_send_text(s_ws, buf, n, pdMS_TO_TICKS(1000));
 }
 

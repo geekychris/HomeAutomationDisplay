@@ -1,0 +1,3 @@
+# 3.5" Sunton ESP32-3248S035C (GT911 capacitive touch).
+# On top of the top-level sdkconfig.defaults (platformio.ini).
+CONFIG_HAD_BOARD_SUNTON35C=y

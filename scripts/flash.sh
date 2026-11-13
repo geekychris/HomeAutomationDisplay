@@ -3,8 +3,11 @@
 #   scripts/flash.sh                         build and flash
 #   scripts/flash.sh /dev/cu.usbserial-110   on that port
 #   scripts/flash.sh --monitor               then show the logs
+# BOARD picks the build (default cyd): cyd, st7796r, sunton35c.
+#   BOARD=st7796r scripts/flash.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+BOARD=${BOARD:-cyd}
 PIO=${PIO:-$(command -v pio || echo "$HOME/.platformio/penv/bin/pio")}
 port=() monitor=0
 for a in "$@"; do
@@ -14,7 +17,7 @@ for a in "$@"; do
     esac
 done
 scripts/prepare-idf.sh
-"$PIO" run -e cyd -t upload ${port[@]+"${port[@]}"}
+"$PIO" run -e "$BOARD" -t upload ${port[@]+"${port[@]}"}
 if [ $monitor = 1 ]; then
-    "$PIO" device monitor -e cyd ${port[1]:+--port "${port[1]}"}
+    "$PIO" device monitor -e "$BOARD" ${port[1]:+--port "${port[1]}"}
 fi

@@ -1,14 +1,16 @@
 # Shortcuts. Everything here is also a script in scripts/ or a plain command.
 .PHONY: firmware flash monitor hub hub-ha test addon icons clean
 
-firmware:            ## build the firmware and dist/home-automation-display-<ver>.bin
+BOARD ?= cyd
+
+firmware:            ## build every board, and dist/home-automation-display-<ver>-<board>.bin
 	scripts/build-firmware.sh
 
-flash:               ## build and flash over USB (PORT=/dev/cu.usbserial-110 to pick one)
-	scripts/flash.sh $(PORT)
+flash:               ## build and flash over USB (BOARD=cyd|st7796r|sunton35c, PORT=/dev/cu.usbserial-110)
+	BOARD=$(BOARD) scripts/flash.sh $(PORT)
 
 monitor:             ## the display's serial log
-	pio device monitor -e cyd
+	pio device monitor -e $(BOARD)
 
 hub/.venv:
 	python3 -m venv hub/.venv && hub/.venv/bin/pip install -q -r hub/requirements-dev.txt

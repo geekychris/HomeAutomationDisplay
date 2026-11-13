@@ -151,12 +151,22 @@ trimming; `backends/mock.py` is the small one.
 
 ## Change the firmware for a different board
 
-Pins are in menuconfig (`main/Kconfig.projbuild`). A board with another
-panel controller (ST7789 on some CYD variants) needs a different
-`esp_lcd_new_panel_*` call in `components/display/display.c`, plus that
-driver in `components/display/idf_component.yml`. Another resolution means
-changing `W`/`H` in `display.c` and the tile sizes in `dashboard.c`. Tell
-the hub as well: `hello` carries `w` and `h`, ready for size-aware layouts.
+Boards live in `components/board`. Each is an entry in `boards.c`: screen
+size, panel controller and pins, colour order and orientation, backlight,
+and touch controller (XPT2046 on its own pins or on the LCD's bus, GT911
+or FT6336 on I2C). To add one:
+
+1. Add a choice under **Board** in `main/Kconfig.projbuild`, and its entry
+   in `boards.c`.
+2. Add `boards/<id>/sdkconfig.defaults` selecting it, and an environment in
+   `platformio.ini` that uses it (copy `[env:st7796r]`).
+3. Another panel controller needs its `esp_lcd` driver in
+   `components/board/idf_component.yml` and a case in `board_spi.c`.
+
+The UI scales itself from the screen size (`components/display/ui.c`):
+everything drawn for 320×240 grows by one factor, fonts step up, and
+screens 800 px wide or more put four tiles across. `hello` tells the hub
+the screen size and board.
 
 ## Protocol changes
 
