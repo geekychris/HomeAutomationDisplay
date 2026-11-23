@@ -102,7 +102,7 @@ drivers built in, and Windows may need the CH340 driver.
 ```sh
 pip install esptool
 esptool.py --chip esp32 --port /dev/cu.usbserial-110 --baud 460800 \
-    write_flash 0x0 home-automation-display-0.4.0-cyd.bin
+    write_flash 0x0 home-automation-display-0.5.0-cyd.bin
 ```
 
 Download `home-automation-display-<version>-<board>.bin` for your board from the

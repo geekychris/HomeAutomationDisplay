@@ -61,6 +61,25 @@ footer a { color: inherit; }
 .overlay { position: absolute; inset: 0; background: rgb(10 10 10 / .92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .overlay .big { font-size: 28px; font-weight: 700; color: #f5a623; }
 .toast { position: absolute; left: 10px; right: 10px; bottom: 8px; background: #7a2a22; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+.toast.note { background: #2f5d3a; }
+/* The scene strip: 30 px along the bottom when the layout has scenes. Tiles
+   then shrink to 81 px so two rows still fit. */
+#screen.has-strip .grid { height: 180px; }
+#screen.has-strip .tile { height: 81px; }
+#screen.has-strip .climate .set button { width: 34px; height: 34px; }
+#screen.has-strip .climate .mode { height: 24px; }
+#screen.has-strip .toast { bottom: 38px; }
+.strip { height: 30px; display: flex; gap: 6px; padding: 3px 6px; overflow-x: auto; scrollbar-width: none; background: #1c1f23; }
+.strip .chip { flex: none; height: 24px; padding: 0 12px; border-radius: 12px; border: 0; background: #3a4048; color: #f0f0f0;
+  font: 14px Montserrat, system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.strip .chip.on { background: #f5a623; color: #15171a; font-weight: 600; }
+.strip .chip.held { outline: 2px solid #f5a623; }
+.confirm { position: absolute; inset: 0; background: rgb(10 10 10 / .85); display: flex; align-items: center; justify-content: center; }
+.confirm .box { width: 270px; background: #2a2f35; border-radius: 8px; padding: 12px; text-align: center; }
+.confirm .q { font-weight: 600; margin-bottom: 4px; }
+.confirm .why { font-size: 12px; color: #bbb; margin-bottom: 10px; }
+.confirm button { width: 110px; height: 32px; margin: 0 4px; border: 0; border-radius: 6px; background: #3a4048; color: #fff; font: inherit; cursor: pointer; }
+.confirm button.save { background: #f5a623; color: #15171a; font-weight: 600; }
 .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; color: var(--page-muted); }
 .controls input { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid #8884; background: transparent; color: var(--page-ink); width: 140px; }
 .controls button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: var(--page-ink); cursor: pointer; }
@@ -94,6 +113,7 @@ try { localStorage.setItem("vid", id); } catch {}
 document.getElementById("vid").value = id;
 
 let ws = null, layout = null, states = {}, page = 0, status = "connecting", identifyUntil = 0, toast = null;
+let active = "", confirmScene = null, lastHold = 0;   // the scene that is on; the scene a long-press asked to save over
 const pending = {};   // entity -> {tgt, timer}: a target set here, not yet sent
 
 function connect() {
@@ -111,10 +131,17 @@ function act(e, a, v) { send(v === undefined ? { t: "act", e, a } : { t: "act", 
 
 function on(m) {
   if (m.t === "layout") { layout = m; status = "ready"; if (page >= m.pages.length) page = 0; }
+  else if (m.t === "active") { active = m.s || ""; }
   else if (m.t === "state") { if (pending[m.e]) m.tgt = pending[m.e].tgt; states[m.e] = m; }
   else if (m.t === "identify") { identifyUntil = Date.now() + (m.s || 10) * 1000; setTimeout(draw, (m.s || 10) * 1000 + 50); }
-  else if (m.t === "error") { toast = m.msg; setTimeout(() => { toast = null; draw(); }, 3000); }
+  else if (m.t === "error" || m.t === "note") { showToast(m.msg, m.t === "note"); }
   draw();
+}
+
+function showToast(msg, note) {
+  toast = { msg, note };
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => { toast = null; draw(); }, 3000);
 }
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -141,16 +168,58 @@ function draw() {
     for (const t of pages[page].tiles) grid.append(tile(t, states[t.e] || { ok: false }));
   }
   const kids = [bar, grid];
+  const sceneList = layout?.scenes || [];
+  screen.classList.toggle("has-strip", sceneList.length > 0);
+  if (sceneList.length) kids.push(strip(sceneList));
+  if (confirmScene) kids.push(confirmBox(confirmScene));
   if (Date.now() < identifyUntil) {
     const o = el("div", "overlay");
     o.append(el("div", "", "This is"), el("div", "big", id), el("div", "", layout?.title || ""));
     o.onclick = () => { identifyUntil = 0; draw(); };
     kids.push(o);
   }
-  if (toast) kids.push(el("div", "toast", toast));
+  if (toast) kids.push(el("div", "toast" + (toast.note ? " note" : ""), toast.msg));
   const scroll = screen.querySelector(".grid")?.scrollTop || 0;
   screen.replaceChildren(...kids);
   grid.scrollTop = scroll;
+}
+
+// Tap a scene to apply it; hold it to save the room into it (after a confirm).
+function strip(list) {
+  const row = el("div", "strip");
+  for (const sc of list) {
+    const c = el("button", "chip" + (sc.id === active ? " on" : ""), sc.n);
+    let timer = null;
+    c.onpointerdown = () => { timer = setTimeout(() => { lastHold = Date.now(); c.classList.add("held"); longPress(sc); }, 500); };
+    c.onpointerup = c.onpointerleave = () => clearTimeout(timer);
+    c.onclick = () => {
+      // The screen redraws often (sensors), so the chip released may not be the
+      // one pressed: go by the time of the last long-press instead.
+      if (Date.now() - lastHold < 1500) return;
+      active = sc.id;            // the hub confirms with "active", or corrects it
+      send({ t: "scene", s: sc.id });
+      draw();
+    };
+    row.append(c);
+  }
+  const old = screen.querySelector(".strip");
+  if (old) requestAnimationFrame(() => { row.scrollLeft = old.scrollLeft; });
+  return row;
+}
+function longPress(sc) {
+  if (sc.lk) { showToast(`${sc.n} is locked; change it in the hub`, false); draw(); return; }
+  confirmScene = sc;
+  draw();
+}
+function confirmBox(sc) {
+  const o = el("div", "confirm"), box = el("div", "box");
+  const cancel = el("button", "", "Cancel"), save = el("button", "save", "Save");
+  cancel.onclick = () => { confirmScene = null; draw(); };
+  save.onclick = () => { confirmScene = null; send({ t: "scene_save", s: sc.id }); draw(); };
+  box.append(el("div", "q", `Save the room into “${sc.n}”?`),
+    el("div", "why", "Everything in the scene takes the state it is in now."), cancel, save);
+  o.append(box);
+  return o;
 }
 
 function tile(t, s) {

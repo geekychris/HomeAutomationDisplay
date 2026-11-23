@@ -56,7 +56,9 @@ sent. It helps when debugging the protocol.
 .venv/bin/python -m pytest tests
 ```
 
-`test_hub.py` covers the protocol, registry and mock. `test_kinds.py`
+`test_hub.py` covers the protocol, registry and mock. `test_scenes.py`
+covers scenes: capture, matching, applying, the strip, and saving from a
+display. `test_kinds.py`
 covers every entity domain. `test_homeassistant.py` runs the Home Assistant
 backend against a fake of HA's WebSocket API (auth, states, events,
 registries, service calls, reconnects), and checks the admin guard.
@@ -69,7 +71,8 @@ registries, service calls, reconnects), and checks the admin guard.
 | `had_hub/backends/base.py` | What a backend provides: states, change events, service calls, status |
 | `had_hub/backends/homeassistant.py` | Home Assistant over its WebSocket API |
 | `had_hub/backends/mock.py` | The mock house |
-| `had_hub/registry.py` | Displays and their pages of tiles, saved as JSON |
+| `had_hub/registry.py` | Displays, their pages of tiles and scene strips, and the scene library, saved as JSON |
+| `had_hub/scenes.py` | Scenes: capture, match ("is it on?") and apply |
 | `had_hub/server.py` | The display WebSocket, the admin API, the admin guard, mDNS |
 | `had_hub/__main__.py` | Command line, and add-on options |
 | `had_hub/static/` | The admin page and the virtual display |

@@ -20,6 +20,8 @@
 #define HUB_NAME_LEN       24
 #define HUB_PAGE_NAME_LEN  16
 #define HUB_MAX_MODES      4
+#define HUB_MAX_SCENES     6        // on the scene strip
+#define HUB_SCENE_ID_LEN   12
 
 // What a tile draws. The hub maps every Home Assistant domain onto one of
 // these (hub/had_hub/entities.py): LIGHT is on/off with an optional 0-100
@@ -51,6 +53,14 @@ typedef struct {
     uint8_t    nmodes;
 } hub_tile_t;
 
+// A scene on this display's strip. The hub keeps what is in it; the display
+// only applies it, or asks the hub to save the room's current state into it.
+typedef struct {
+    char       id[HUB_SCENE_ID_LEN];
+    char       name[HUB_PAGE_NAME_LEN];
+    bool       locked;              // the hub will not let a display save over it
+} hub_scene_t;
+
 typedef struct {
     uint32_t   gen;                 // goes up with every layout received
     char       title[HUB_NAME_LEN];
@@ -59,6 +69,10 @@ typedef struct {
     char       page[HUB_MAX_PAGES][HUB_PAGE_NAME_LEN];
     uint8_t    ntiles;
     hub_tile_t tiles[HUB_MAX_TILES];
+    uint8_t    nscenes;
+    hub_scene_t scenes[HUB_MAX_SCENES];
+    int8_t     active;              // the scene that is on (index), or -1
+    uint32_t   scene_seq;           // goes up when `active` changes
 } hub_layout_t;
 
 typedef enum {
@@ -90,11 +104,14 @@ bool hub_brightness(const char *entity, int pct);
 bool hub_target(const char *entity, float temp);
 bool hub_mode(const char *entity, const char *mode);
 bool hub_press(const char *entity);                 // button tiles
+bool hub_scene_apply(const char *scene_id);         // guesses it is now the active one
+bool hub_scene_save(const char *scene_id);          // the hub answers with a note or an error
 
 // Set by the hub's "identify" (show this display's id for a few seconds) and
 // "error" messages. Each call returns the latest and clears it.
 int  hub_take_identify(void);                       // seconds, or 0
 bool hub_take_error(char *buf, size_t n);
+bool hub_take_note(char *buf, size_t n);            // good news, e.g. "Saved Evening"
 
 // The hub address, saved in NVS: "ws://host:port/ws", or "" to go back to
 // the Kconfig default and then mDNS. Reconnects.

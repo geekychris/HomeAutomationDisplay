@@ -13,6 +13,16 @@ one shows from **Displays** in the sidebar.
 3. The display appears in **Displays**. Press **Identify** to see which
    panel it is, give it a name, add tiles, and press **Save to display**.
 
+## Scenes
+
+Scenes set several lights, switches, covers, locks and thermostats at once.
+Make them under **Scenes** in **Displays**: add entities as they are now,
+adjust them, or set the room up and press **Capture current state**. Then
+add scenes to a display's **Scene strip**. On the display, tap a scene to
+apply it, or hold it to save the room into it (unless the scene is locked).
+These scenes are kept by this add-on, not in Home Assistant's scene list.
+[More about scenes](https://github.com/geekychris/HomeAutomationDisplay/blob/master/docs/scenes.md).
+
 ## Options
 
 - **lan_admin**: also serve the admin page at `http://<this host>:8390/`
@@ -29,12 +39,13 @@ one shows from **Displays** in the sidebar.
 
 The add-on uses the host's network and listens on port **8390**. Displays
 connect there (`ws://<this host>:8390/ws`). The display connection needs no
-login, but a display can only control the entities you have put on it.
+login, but a display can only control the entities you have put on it, and
+the scenes on its strip.
 
 ## Data
 
-Layouts are kept in the add-on's `/data/displays.json` and included in Home
-Assistant backups.
+Layouts and scenes are kept in the add-on's `/data/displays.json` and
+included in Home Assistant backups.
 
 ## Supported entities
 

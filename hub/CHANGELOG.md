@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0
+
+- **Scenes**, kept by the hub. Make them in the admin page under
+  **Scenes**: add lights, fans, covers, switches, locks and thermostats as
+  they are now, adjust on/off, level, mode and target, or **Capture current
+  state**. **Apply now** runs one; **Locked** stops displays saving over it.
+- Each display gets a **scene strip** (up to 6 scenes) in its layout. The
+  display shows it along the bottom of every page: tap to apply, hold to
+  save the room into the scene. The scene that is on is highlighted, and
+  goes out when something in it is changed by hand.
+- Protocol: `scenes` in the layout, `active` and `note` from the hub,
+  `scene` and `scene_save` from displays. Older firmware ignores them.
+- Firmware 0.5.0: the scene strip, with tiles a little shorter when it is
+  there; a confirm before saving over a scene; green notes.
+
 ## 0.4.1
 
 - Admin page: a **Room, then device** grouping: each room (HA area) holds

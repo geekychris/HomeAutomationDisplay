@@ -23,6 +23,7 @@ from aiohttp import WSMsgType, web
 
 from . import __version__
 from . import entities as E
+from . import scenes as S
 from .backends.base import Backend
 from .registry import ConfigError, Registry
 
@@ -43,6 +44,7 @@ class DisplaySession:
         self.ws = ws
         self.hello = hello
         self.since = time.time()
+        self.active = None              # the scene last reported as on, or None
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=256)
         self._writer = asyncio.create_task(self._write())
 
@@ -75,6 +77,7 @@ class Hub:
         self.sessions: dict[str, DisplaySession] = {}
         self.admins: set[web.WebSocketResponse] = set()
         self._rev = 0
+        self._scenes_on: set[str] = set()   # which scenes are on, as the admin page last heard
         backend.subscribe(self._on_state)
 
     # ------------------------------------------------------------ messages to displays
@@ -92,7 +95,22 @@ class Hub:
         if not any(p["tiles"] for p in pages):
             msg["pages"] = []
             msg["msg"] = f"Not set up yet.\nOpen the hub and add tiles to\n{display_id}"
+        strip = self.registry.display_scenes(display_id)
+        if strip:
+            msg["scenes"] = [{"id": sid, "n": E.clip(sc["name"], S.MAX_SCENE_NAME), "lk": bool(sc.get("locked"))}
+                             for sid, sc in strip]
         return msg
+
+    def _active_scene(self, display_id: str) -> str | None:
+        """The first scene on the display's strip that is on."""
+        states = self.backend.states()
+        return next((sid for sid, sc in self.registry.display_scenes(display_id) if S.is_on(sc, states)), None)
+
+    def _send_active(self, s: DisplaySession, force: bool = False) -> None:
+        active = self._active_scene(s.id)
+        if force or active != s.active:
+            s.active = active
+            s.send({"t": "active", "s": active or ""})
 
     def push_layout(self, display_id: str) -> None:
         s = self.sessions.get(display_id)
@@ -101,17 +119,59 @@ class Hub:
         s.send(self.layout_msg(display_id))
         for c in self.registry.tiles(display_id):
             s.send(E.state_msg(c["entity"], self.backend.get(c["entity"]), c))
+        if self.registry.display_scenes(display_id):
+            self._send_active(s, force=True)
 
     def _on_state(self, e: E.EntityState) -> None:
         for s in list(self.sessions.values()):
             for c in self.registry.tiles(s.id):
                 if c["entity"] == e.entity_id:
                     s.send(E.state_msg(e.entity_id, e, c))
+            if any(e.entity_id in sc.get("entities", {}) for _, sc in self.registry.display_scenes(s.id)):
+                self._send_active(s)
         self._admin_broadcast({"t": "entity", "entity": e.as_dict()})
+        if any(e.entity_id in sc.get("entities", {}) for sc in self.registry.scenes().values()):
+            self._admin_scenes(only_if_changed=True)
 
     async def act(self, entity_id: str, action: str, value=None) -> None:
         domain, service, data = E.action_to_service(entity_id, self.backend.get(entity_id), action, value)
         await self.backend.call_service(domain, service, data)
+
+    async def apply_scene(self, scene_id: str) -> list[str]:
+        sc = self.registry.scene(scene_id)
+        if not sc:
+            raise S.SceneError(f"no scene {scene_id}")
+        log.info("applying scene %s (%s)", sc["name"], scene_id)
+        return await S.apply(sc, self.backend.states(), self.act)
+
+    def capture_scene(self, scene_id: str, entity_ids=None) -> list[str]:
+        """Set a scene to how its entities (or `entity_ids`) are now. Entities
+        that are unavailable keep their old values. Returns those skipped."""
+        sc = self.registry.scene(scene_id)
+        if not sc:
+            raise S.SceneError(f"no scene {scene_id}")
+        ids = list(entity_ids) if entity_ids is not None else list(sc.get("entities", {}))
+        values, skipped = {}, []
+        for eid in ids:
+            v = S.capture(eid, self.backend.get(eid))
+            if v is None:
+                skipped.append(eid)
+                if eid in sc.get("entities", {}):
+                    values[eid] = sc["entities"][eid]
+            else:
+                values[eid] = v
+        self.registry.set_scene_values(scene_id, values)
+        self.scenes_changed()
+        return skipped
+
+    def scenes_changed(self, displays=None) -> None:
+        """After scenes were edited: new layouts for displays showing them
+        (names, locks, which is on) and a fresh list for the admin page."""
+        for display_id in (displays if displays is not None else list(self.sessions)):
+            if display_id in self.sessions:
+                self.push_layout(display_id)
+        self._admin_scenes()
+        self._admin_displays()
 
     def identify(self, display_id: str, seconds: int = 10) -> bool:
         s = self.sessions.get(display_id)
@@ -185,6 +245,27 @@ class Hub:
                 s.send({"t": "error", "msg": E.clip(str(err), 80)})
                 cfg = next(c for c in self.registry.tiles(s.id) if c["entity"] == entity_id)
                 s.send(E.state_msg(entity_id, self.backend.get(entity_id), cfg))
+        elif t in ("scene", "scene_save"):
+            scene_id = m.get("s")
+            strip = dict(self.registry.display_scenes(s.id))
+            # A display can only use the scenes on its strip.
+            if scene_id not in strip:
+                s.send({"t": "error", "msg": "that scene is not on this display"})
+                return
+            name = strip[scene_id]["name"]
+            if t == "scene":
+                failed = await self.apply_scene(scene_id)
+                if failed:
+                    s.send({"t": "error", "msg": E.clip(f"{name}: {len(failed)} did not change. {failed[0]}", 80)})
+                # The display guessed this scene is now on; correct it if that is wrong.
+                self._send_active(s, force=bool(failed))
+            elif strip[scene_id].get("locked"):
+                s.send({"t": "error", "msg": E.clip(f"{name} is locked; change it in the hub", 80)})
+            else:
+                skipped = self.capture_scene(scene_id)
+                log.info("%s saved scene %s", s.id, name)
+                note = f"Saved {name}" + (f" ({len(skipped)} unavailable, kept)" if skipped else "")
+                s.send({"t": "note", "msg": E.clip(note, 80)})
         elif t == "ping":
             s.send({"t": "pong"})
 
@@ -195,6 +276,7 @@ class Hub:
         for display_id, d in sorted(self.registry.displays().items()):
             s = self.sessions.get(display_id)
             out.append({"id": display_id, "name": d.get("name", ""), "pages": d.get("pages", []),
+                        "scenes": d.get("scenes", []),
                         "info": d.get("info", {}), "last_seen": d.get("last_seen"),
                         "online": bool(s), "since": s.since if s else None})
         return out
@@ -210,6 +292,25 @@ class Hub:
         except (ConnectionResetError, RuntimeError):
             self.admins.discard(ws)
 
+    def scenes_json(self) -> list[dict]:
+        states = self.backend.states()
+        used: dict[str, list[str]] = {}
+        for display_id, d in self.registry.displays().items():
+            for sid in d.get("scenes", []):
+                used.setdefault(sid, []).append(display_id)
+        return sorted(({"id": sid, "name": sc["name"], "entities": sc.get("entities", {}),
+                        "locked": bool(sc.get("locked")), "on": S.is_on(sc, states),
+                        "displays": used.get(sid, [])}
+                       for sid, sc in self.registry.scenes().items()), key=lambda x: x["name"].lower())
+
+    def _admin_scenes(self, only_if_changed: bool = False) -> None:
+        scenes = self.scenes_json()
+        on = {x["id"] for x in scenes if x["on"]}
+        if only_if_changed and on == self._scenes_on:
+            return
+        self._scenes_on = on
+        self._admin_broadcast({"t": "scenes", "scenes": scenes})
+
     def _admin_displays(self) -> None:
         self._admin_broadcast({"t": "displays", "displays": self.displays_json()})
 
@@ -218,6 +319,7 @@ class Hub:
         await ws.prepare(request)
         self.admins.add(ws)
         await ws.send_json({"t": "displays", "displays": self.displays_json()})
+        await ws.send_json({"t": "scenes", "scenes": self.scenes_json()})
         try:
             async for _ in ws:
                 pass
@@ -230,7 +332,10 @@ class Hub:
             "backend": self.backend.name, "status": self.backend.status(),
             "version": __version__, "proto": PROTO,
             "limits": {"pages": E.MAX_PAGES, "tiles_per_page": E.MAX_TILES_PER_PAGE,
-                       "tiles": E.MAX_TILES, "name": E.MAX_NAME, "page_name": E.MAX_PAGE_NAME},
+                       "tiles": E.MAX_TILES, "name": E.MAX_NAME, "page_name": E.MAX_PAGE_NAME,
+                       "scenes": S.MAX_SCENES, "display_scenes": S.MAX_DISPLAY_SCENES,
+                       "scene_entities": S.MAX_SCENE_ENTITIES, "scene_name": S.MAX_SCENE_NAME},
+            "scene_kinds": list(S.SCENE_KINDS),
             "kinds": E.KIND_BY_DOMAIN,
         })
 
@@ -280,6 +385,67 @@ class Hub:
         self._admin_displays()
         return web.json_response({"ok": True})
 
+    # ------------------------------------------------------------ admin: scenes
+
+    async def api_scenes(self, request: web.Request) -> web.Response:
+        return web.json_response(self.scenes_json())
+
+    async def api_scene_post(self, request: web.Request) -> web.Response:
+        """A new scene: {name, entities, locked}, or {name, capture: [entity ids]}
+        to take the entities' current state."""
+        body = await request.json()
+        capture = body.get("capture") if isinstance(body, dict) else None
+        try:
+            if capture is not None:
+                if not isinstance(capture, list) or not all(isinstance(x, str) for x in capture):
+                    raise ConfigError("capture must be a list of entity ids")
+                values = {eid: v for eid in capture
+                          if (v := S.capture(eid, self.backend.get(eid))) is not None}
+                if not values:
+                    raise ConfigError("none of those entities can be captured (unavailable, or not a light, switch or thermostat)")
+                body = {**body, "entities": values}
+            scene_id = self.registry.add_scene(body)
+        except (ConfigError, ValueError) as err:
+            return web.json_response({"ok": False, "err": str(err)}, status=400)
+        self.scenes_changed()
+        return web.json_response({"ok": True, "id": scene_id})
+
+    async def api_scene_put(self, request: web.Request) -> web.Response:
+        scene_id = request.match_info["scene_id"]
+        try:
+            self.registry.set_scene(scene_id, await request.json())
+        except (ConfigError, ValueError) as err:
+            return web.json_response({"ok": False, "err": str(err)}, status=400)
+        self.scenes_changed()
+        return web.json_response({"ok": True})
+
+    async def api_scene_delete(self, request: web.Request) -> web.Response:
+        scene_id = request.match_info["scene_id"]
+        if not self.registry.scene(scene_id):
+            raise web.HTTPNotFound()
+        had = self.registry.delete_scene(scene_id)
+        self.scenes_changed(had)
+        return web.json_response({"ok": True})
+
+    async def api_scene_apply(self, request: web.Request) -> web.Response:
+        try:
+            failed = await self.apply_scene(request.match_info["scene_id"])
+        except S.SceneError as err:
+            return web.json_response({"ok": False, "err": str(err)}, status=404)
+        return web.json_response({"ok": not failed, "failed": failed,
+                                  "err": "; ".join(failed) if failed else None})
+
+    async def api_scene_capture(self, request: web.Request) -> web.Response:
+        """Take the current state of the scene's entities, or of the
+        entities listed in the body: {"entities": [ids]}."""
+        body = await request.json() if request.can_read_body else {}
+        ids = body.get("entities") if isinstance(body, dict) else None
+        try:
+            skipped = self.capture_scene(request.match_info["scene_id"], ids)
+        except (S.SceneError, ConfigError, ValueError) as err:
+            return web.json_response({"ok": False, "err": str(err)}, status=400)
+        return web.json_response({"ok": True, "skipped": skipped})
+
     async def api_identify(self, request: web.Request) -> web.Response:
         ok = self.identify(request.match_info["display_id"])
         return web.json_response({"ok": ok, "err": None if ok else "that display is not connected"},
@@ -315,6 +481,12 @@ def make_app(hub: Hub) -> web.Application:
         web.put("/api/displays/{display_id}", hub.api_display_put),
         web.delete("/api/displays/{display_id}", hub.api_display_delete),
         web.post("/api/displays/{display_id}/identify", hub.api_identify),
+        web.get("/api/scenes", hub.api_scenes),
+        web.post("/api/scenes", hub.api_scene_post),
+        web.put("/api/scenes/{scene_id}", hub.api_scene_put),
+        web.delete("/api/scenes/{scene_id}", hub.api_scene_delete),
+        web.post("/api/scenes/{scene_id}/apply", hub.api_scene_apply),
+        web.post("/api/scenes/{scene_id}/capture", hub.api_scene_capture),
     ])
     app.router.add_static("/static/", STATIC)
 
