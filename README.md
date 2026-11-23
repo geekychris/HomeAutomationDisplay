@@ -27,6 +27,10 @@ flowchart LR
   switches, locks, automations, sirens, scenes, scripts, buttons, sensors
   coloured by level (CO2, VOC, PM2.5, battery...), binary sensors, people,
   weather, and thermostats. [The full list](docs/entities.md).
+- **Scenes.** Make scenes in the admin page (or capture the room as it is),
+  and give each display a strip of them along the bottom of the screen: tap
+  to apply, hold to save the room into one. The scene that is on lights up.
+  [Scenes](docs/scenes.md).
 - **No secrets on the displays.** Only the hub talks to Home Assistant.
 - **Try it without hardware or Home Assistant.** The hub has a mock house
   and a virtual display in the browser.
@@ -66,6 +70,7 @@ make hub        # mock house: http://localhost:8390/, virtual display: http://lo
 |---|---|
 | [docs/install.md](docs/install.md) | Installing the hub (add-on, Docker, venv) and the firmware; first-time setup; troubleshooting |
 | [docs/entities.md](docs/entities.md) | Every supported entity type: what it shows, what a tap does, which service it calls |
+| [docs/scenes.md](docs/scenes.md) | Scenes: making them, each display's scene strip, saving from a display |
 | [docs/architecture.md](docs/architecture.md) | How the pieces fit, with diagrams: startup, taps, layouts, reconnects, firmware internals, security |
 | [docs/extending.md](docs/extending.md) | Adding entity types, tile kinds and backends; porting to other boards; releasing |
 | [docs/protocol.md](docs/protocol.md) | The display ↔ hub messages |

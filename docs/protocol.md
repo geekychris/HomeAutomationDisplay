@@ -53,6 +53,15 @@ The hub only accepts actions on entities that are on that display. The
 display shows its guess straight away; the hub's next `state` confirms or
 corrects it.
 
+**scene**: apply a scene from the display's strip. `{"t":"scene","s":"s1ea214"}`
+
+**scene_save**: save the room's current state into a scene on the strip
+(after the person confirmed). `{"t":"scene_save","s":"s1ea214"}`. The hub
+answers with a `note` ("Saved Evening") or, for a locked scene, an `error`.
+
+A display can only use the scenes on its own strip; anything else gets an
+`error`. See [scenes.md](scenes.md).
+
 **ping**: optional; the hub answers `pong`. WebSocket pings also work.
 
 ## Hub → display
@@ -120,6 +129,25 @@ else is sent.
 The hub works `lvl` out from the sensor's device class (CO2 warns at 1000
 ppm and is bad at 1500, battery warns at 20% and is bad at 10%...) or from
 per-tile thresholds set in the admin page.
+
+**Scenes in the layout.** When the display has scenes on its strip, the
+layout also carries them, in order (up to 6; names up to 15 bytes; `lk` true
+when the scene is locked against saving from a display):
+
+```json
+"scenes":[{"id":"s1ea214","n":"Evening","lk":false},{"id":"se32550","n":"Away","lk":true}]
+```
+
+Older firmware ignores the field, so it simply shows no strip.
+
+**active**: which scene on the strip is on now (everything in it as the
+scene says), or `""` for none. Sent after a layout that has scenes, and
+whenever it changes. `{"t":"active","s":"s1ea214"}`. After a `scene`, the
+display may guess the tapped scene is on; the hub corrects it if applying
+failed.
+
+**note**: good news for a short message on screen, like `error` but not an
+error. `{"t":"note","msg":"Saved Evening"}`
 
 **identify**: show your id on screen for `s` seconds, so you can tell which
 physical display is which. `{"t":"identify","s":10}`

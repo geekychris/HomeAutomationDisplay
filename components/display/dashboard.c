@@ -7,6 +7,10 @@
 //   | ===o----- | | Good      |
 //   +-----------+ +-----------+
 //
+// With scenes on the display's strip, a 30 px row of them runs along the
+// bottom, and the tiles shrink (to 81 px at 320x240) so two rows still fit.
+// Tap a scene to apply it; hold it to save the room into it, after a confirm.
+//
 // Those are the sizes at 320x240. Bigger screens scale the lot (ui.h), and
 // wide ones (the 9") put four tiles across, so a page's 8 fit without scrolling.
 //
@@ -36,6 +40,9 @@
 #define C_GOOD   0x3fb950
 #define C_BAD    0xef5350
 #define C_BTN    0x3a4048
+#define C_STRIP  0x1c1f23
+#define C_NOTE   0x2f5d3a
+#define C_ERROR  0x7a2a22
 
 typedef struct {
     int idx;                        // into hub_layout()->tiles
@@ -63,16 +70,30 @@ static void (*s_on_settings)(void);
 static lv_style_t st_card, st_name, st_small, st_btn;
 static char s_title_txt[HUB_NAME_LEN];
 static int s_bar_h, s_gap, s_tile_w, s_tile_h;     // set in dashboard_build() for this screen
+static int s_strip_h;                               // the scene strip's row, when there is one
+
+// The scene strip. Its chips are rebuilt with each layout; ids are copied so
+// the tap handlers never read the hub model unlocked.
+static lv_obj_t *s_strip, *s_chips[HUB_MAX_SCENES];
+static char s_scene_id[HUB_MAX_SCENES][HUB_SCENE_ID_LEN];
+static char s_scene_name[HUB_MAX_SCENES][HUB_PAGE_NAME_LEN];
+static bool s_scene_locked[HUB_MAX_SCENES];
+static int s_nscenes;
+static uint32_t s_scene_seq = UINT32_MAX;
+static lv_obj_t *s_confirm, *s_confirm_q;
+static int s_confirm_idx = -1;
 
 // ---------------------------------------------------------------- small things
 
-static void toast(const char *text)
+static void toast_colour(const char *text, uint32_t colour)
 {
+    lv_obj_set_style_bg_color(s_toast, lv_color_hex(colour), 0);
     lv_label_set_text(lv_obj_get_child(s_toast, 0), text);
     lv_obj_remove_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
     lv_timer_reset(s_toast_timer);
     lv_timer_resume(s_toast_timer);
 }
+static void toast(const char *text) { toast_colour(text, C_ERROR); }
 static void toast_hide(lv_timer_t *t) { lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN); lv_timer_pause(t); }
 
 static void not_sent(bool ok) { if (!ok) toast("Not connected to the hub"); }
@@ -337,18 +358,22 @@ static void build_tile(ui_tile_t *u, const hub_tile_t *t)
         lv_obj_align(u->lvl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         // The controls keep to the right edge, however wide the row is:
         // [-] 20.5° [+] on top, the mode button under them.
+        // Buttons fit the tile's height: shorter tiles (a scene strip) get shorter buttons.
+        const int inner = s_tile_h - 2 * PX(8);
+        const int btn_h = PX(38) < inner * 55 / 100 ? PX(38) : inner * 55 / 100;
+        const int mode_h = PX(32) < inner - btn_h - PX(3) ? PX(32) : inner - btn_h - PX(3);
         lv_obj_t *plus = flat_button(u->card, LV_SYMBOL_PLUS, on_plus, u);
-        lv_obj_set_size(plus, PX(40), PX(38));
+        lv_obj_set_size(plus, PX(40), btn_h);
         lv_obj_align(plus, LV_ALIGN_TOP_RIGHT, 0, 0);
         u->tgt = label(u->card, NULL, UI.mid);
         lv_obj_set_width(u->tgt, PX(62));
         lv_obj_set_style_text_align(u->tgt, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(u->tgt, LV_ALIGN_TOP_RIGHT, -PX(40), PX(9));
+        lv_obj_align(u->tgt, LV_ALIGN_TOP_RIGHT, -PX(40), (btn_h - lv_font_get_line_height(UI.mid)) / 2);
         lv_obj_t *minus = flat_button(u->card, LV_SYMBOL_MINUS, on_minus, u);
-        lv_obj_set_size(minus, PX(40), PX(38));
+        lv_obj_set_size(minus, PX(40), btn_h);
         lv_obj_align(minus, LV_ALIGN_TOP_RIGHT, -PX(102), 0);
         u->mode = flat_button(u->card, "--", on_mode, u);
-        lv_obj_set_size(u->mode, PX(142), PX(32));
+        lv_obj_set_size(u->mode, PX(142), mode_h);
         lv_obj_align(u->mode, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
         break;
     }
@@ -367,6 +392,80 @@ static void clear_page(void)
     s_nui = 0;
     lv_obj_clean(s_grid);
     s_msg = NULL;
+}
+
+// ---------------------------------------------------------------- the scene strip
+
+static void on_chip(lv_event_t *e)
+{
+    const int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i >= s_nscenes) return;
+    if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) {
+        not_sent(hub_scene_apply(s_scene_id[i]));
+    } else if (s_scene_locked[i]) {                 // LV_EVENT_LONG_PRESSED
+        char b[64];
+        snprintf(b, sizeof(b), "%s is locked; change it in the hub", s_scene_name[i]);
+        toast(b);
+    } else {
+        s_confirm_idx = i;
+        lv_label_set_text_fmt(s_confirm_q, "Save the room into \"%s\"?", s_scene_name[i]);
+        lv_obj_remove_flag(s_confirm, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void on_confirm(lv_event_t *e)
+{
+    const bool save = (bool)(intptr_t)lv_event_get_user_data(e);
+    lv_obj_add_flag(s_confirm, LV_OBJ_FLAG_HIDDEN);
+    if (save && s_confirm_idx >= 0 && s_confirm_idx < s_nscenes) not_sent(hub_scene_save(s_scene_id[s_confirm_idx]));
+    s_confirm_idx = -1;
+}
+
+static void paint_chips(int active)
+{
+    for (int i = 0; i < s_nscenes; i++) {
+        const bool on = i == active;
+        lv_obj_set_style_bg_color(s_chips[i], lv_color_hex(on ? C_ACCENT : C_BTN), 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(s_chips[i], 0), lv_color_hex(on ? C_BG : 0xf0f0f0), 0);
+    }
+}
+
+// Call with the hub lock held. Sizes the grid and tiles for whether there is a strip.
+static void build_strip(const hub_layout_t *L)
+{
+    lv_obj_clean(s_strip);
+    s_nscenes = L->nscenes;
+    s_confirm_idx = -1;
+    lv_obj_add_flag(s_confirm, LV_OBJ_FLAG_HIDDEN);
+    for (int i = 0; i < s_nscenes; i++) {
+        snprintf(s_scene_id[i], sizeof(s_scene_id[i]), "%s", L->scenes[i].id);
+        snprintf(s_scene_name[i], sizeof(s_scene_name[i]), "%s", L->scenes[i].name);
+        s_scene_locked[i] = L->scenes[i].locked;
+        lv_obj_t *c = lv_button_create(s_strip);
+        lv_obj_add_style(c, &st_btn, 0);
+        lv_obj_set_style_radius(c, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_pad_hor(c, PX(12), 0);
+        lv_obj_set_height(c, s_strip_h - PX(6));
+        lv_obj_set_width(c, LV_SIZE_CONTENT);
+        lv_obj_t *l = lv_label_create(c);
+        lv_obj_set_style_text_font(l, UI.body, 0);
+        lv_label_set_text(l, s_scene_name[i]);
+        lv_obj_center(l);
+        lv_obj_add_event_cb(c, on_chip, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(c, on_chip, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)i);
+        s_chips[i] = c;
+    }
+    paint_chips(L->active);
+    s_scene_seq = L->scene_seq;
+    const int strip = s_nscenes ? s_strip_h : 0;
+    if (s_nscenes) lv_obj_remove_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+    const int grid_h = UI.h - s_bar_h - strip;
+    lv_obj_set_height(s_grid, grid_h);
+    // Two rows that fill the grid, but never taller than the 99 px design.
+    const int fit = (grid_h - 3 * s_gap) / 2;
+    s_tile_h = UI.cols >= 4 || fit < PX(99) ? fit : PX(99);
+    lv_obj_align(s_toast, LV_ALIGN_BOTTOM_MID, 0, -PX(8) - strip);
 }
 
 // Call with the hub lock held.
@@ -436,7 +535,12 @@ static void watch(lv_timer_t *timer)
     if (L->gen != s_gen) {
         s_gen = L->gen;
         if (s_page >= L->npages) s_page = 0;
+        build_strip(L);
         build_page(L);
+    }
+    if (L->scene_seq != s_scene_seq) {
+        s_scene_seq = L->scene_seq;
+        paint_chips(L->active);
     }
     for (int i = 0; i < s_nui; i++) {
         const hub_tile_t *t = &L->tiles[s_ui[i].idx];
@@ -455,6 +559,7 @@ static void watch(lv_timer_t *timer)
     if (id_s) identify(id_s);
     char err[96];
     if (hub_take_error(err, sizeof(err))) toast(err);
+    else if (hub_take_note(err, sizeof(err))) toast_colour(err, C_NOTE);
 
     lv_obj_set_style_bg_color(s_dot, lv_color_hex(hub_status() == HUB_ONLINE ? C_GOOD : C_BAD), 0);
     if (netcfg_time_valid()) {
@@ -510,8 +615,10 @@ void dashboard_build(lv_obj_t *scr, void (*on_settings)(void))
     s_bar_h = PX(30);
     s_gap = PX(6);
     s_tile_w = (UI.w - (UI.cols + 1) * s_gap) / UI.cols;
+    s_strip_h = PX(30);
     // Two across: 99 px tiles (scaled), the page scrolls. Four across: two
-    // rows that fill the screen, so all 8 show at once.
+    // rows that fill the screen, so all 8 show at once. build_strip() sets
+    // it again when a layout arrives, shorter if there is a scene strip.
     s_tile_h = UI.cols >= 4 ? (UI.h - s_bar_h - 3 * s_gap) / 2 : PX(99);
     styles();
     lv_obj_set_style_bg_color(scr, lv_color_hex(C_BG), 0);
@@ -552,6 +659,20 @@ void dashboard_build(lv_obj_t *scr, void (*on_settings)(void))
     lv_obj_set_scroll_dir(s_grid, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_grid, LV_SCROLLBAR_MODE_ACTIVE);
 
+    s_strip = lv_obj_create(scr);
+    lv_obj_remove_style_all(s_strip);
+    lv_obj_set_size(s_strip, UI.w, s_strip_h);
+    lv_obj_align(s_strip, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(s_strip, lv_color_hex(C_STRIP), 0);
+    lv_obj_set_style_bg_opa(s_strip, LV_OPA_COVER, 0);
+    lv_obj_set_flex_flow(s_strip, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_strip, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_hor(s_strip, s_gap, 0);
+    lv_obj_set_style_pad_column(s_strip, s_gap, 0);
+    lv_obj_set_scroll_dir(s_strip, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(s_strip, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+
     // On top of everything: the identify card and the error toast.
     s_overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_overlay);
@@ -584,6 +705,37 @@ void dashboard_build(lv_obj_t *scr, void (*on_settings)(void))
     lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
     s_toast_timer = lv_timer_create(toast_hide, 3000, NULL);
     lv_timer_pause(s_toast_timer);
+
+    // Saving over a scene from the strip asks first.
+    s_confirm = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_confirm);
+    lv_obj_set_size(s_confirm, UI.w, UI.h);
+    lv_obj_set_style_bg_color(s_confirm, lv_color_hex(0x0a0a0a), 0);
+    lv_obj_set_style_bg_opa(s_confirm, LV_OPA_80, 0);
+    lv_obj_add_flag(s_confirm, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);   // swallows taps behind it
+    lv_obj_t *box = lv_obj_create(s_confirm);
+    lv_obj_add_style(box, &st_card, 0);
+    lv_obj_set_size(box, PX(270), LV_SIZE_CONTENT);
+    lv_obj_center(box);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(box, PX(8), 0);
+    s_confirm_q = label(box, &st_name, NULL);
+    lv_obj_set_width(s_confirm_q, lv_pct(100));
+    lv_label_set_long_mode(s_confirm_q, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(s_confirm_q, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_t *why = label(box, &st_small, NULL);
+    lv_obj_set_width(why, lv_pct(100));
+    lv_label_set_long_mode(why, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(why, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(why, "Everything in the scene takes the state it is in now.");
+    lv_obj_t *cancel = flat_button(box, "Cancel", on_confirm, (void *)(intptr_t)false);
+    lv_obj_set_size(cancel, PX(110), PX(32));
+    lv_obj_t *save = flat_button(box, "Save", on_confirm, (void *)(intptr_t)true);
+    lv_obj_set_size(save, PX(110), PX(32));
+    lv_obj_set_style_bg_color(save, lv_color_hex(C_ACCENT), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(save, 0), lv_color_hex(C_BG), 0);
 
     watch(NULL);
     lv_timer_create(watch, 100, NULL);

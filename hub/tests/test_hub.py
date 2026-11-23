@@ -195,6 +195,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_admin_live_feed(self):
         live = await self.client.ws_connect("/api/live")
         self.assertEqual((await self.recv(live))["t"], "displays")
+        self.assertEqual((await self.recv(live))["t"], "scenes")
         r = await self.client.post("/api/entities/switch.garden_pump/action", json={"a": "on"})
         self.assertEqual(r.status, 200)
         m = await self.recv(live)

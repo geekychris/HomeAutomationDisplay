@@ -209,12 +209,26 @@ tile limits so a display is never sent more than it can hold.
           {"entity": "sensor.kitchen_co2", "name": "CO2", "warn": 900}
         ]}
       ],
+      "scenes": ["s1ea214", "se32550"],
       "last_seen": 1762761600.0,
-      "info": {"name": "home-display-a1b2c3", "fw": "0.3.0", "ip": "192.168.1.57"}
+      "info": {"name": "home-display-a1b2c3", "fw": "0.5.0", "ip": "192.168.1.57"}
+    }
+  },
+  "scenes": {
+    "s1ea214": {
+      "name": "Evening", "locked": false,
+      "entities": {
+        "light.living_room": {"on": true, "level": 30},
+        "cover.living_room_blind": {"on": false},
+        "climate.house_heater": {"mode": "heat", "target": 21.5}
+      }
     }
   }
 }
 ```
+
+`scenes` at the top is the hub's scene library ([scenes.md](scenes.md)); a
+display's `scenes` is its strip, in order.
 
 A display's id comes from its MAC, so it survives reflashing. Its layout
 stays with the hub, so a replacement display only needs to be given the old
@@ -224,7 +238,9 @@ one's layout (the admin page's "Copy layout from").
 
 - The display WebSocket is unauthenticated, as on any trusted LAN device. A
   display, or anything pretending to be one, can only act on entities
-  assigned to its id, and only with the actions those tiles have.
+  assigned to its id, and only with the actions those tiles have, plus the
+  scenes on its strip: apply them, and save over the unlocked ones. Lock a
+  scene that holds anything sensitive (a lock, a garage door).
 - As an add-on, the admin page and its API are reachable only through HA's
   ingress, behind HA's login. With the `lan_admin` option they are open to
   the LAN without a login, so leave it off unless you need it.

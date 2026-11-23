@@ -43,6 +43,7 @@ static volatile bool s_url_changed;
 static volatile bool s_has_layout;
 static volatile int s_identify;
 static char s_error[96];
+static char s_note[96];
 static esp_websocket_client_handle_t s_ws;
 
 void hub_lock(void)   { xSemaphoreTake(lock_handle(), portMAX_DELAY); }
@@ -108,6 +109,16 @@ bool hub_take_error(char *buf, size_t n)
     return any;
 }
 
+bool hub_take_note(char *buf, size_t n)
+{
+    hub_lock();
+    const bool any = s_note[0] != 0;
+    if (any) snprintf(buf, n, "%s", s_note);
+    s_note[0] = 0;
+    hub_unlock();
+    return any;
+}
+
 // ---------------------------------------------------------------- from the hub
 
 static void copy_str(char *dst, size_t n, const cJSON *j)
@@ -158,6 +169,16 @@ static void on_layout(const cJSON *m)
         }
         L->npages++;
     }
+    L->active = -1;                     // an "active" message follows
+    const cJSON *sc;
+    cJSON_ArrayForEach(sc, cJSON_GetObjectItem(m, "scenes")) {
+        if (L->nscenes >= HUB_MAX_SCENES) break;
+        hub_scene_t *S = &L->scenes[L->nscenes];
+        copy_str(S->id, sizeof(S->id), cJSON_GetObjectItem(sc, "id"));
+        copy_str(S->name, sizeof(S->name), cJSON_GetObjectItem(sc, "n"));
+        S->locked = cJSON_IsTrue(cJSON_GetObjectItem(sc, "lk"));
+        if (S->id[0]) L->nscenes++;
+    }
     hub_unlock();
     s_has_layout = true;
     if (s_status == HUB_CONNECTING) s_status = HUB_ONLINE;
@@ -207,6 +228,18 @@ static void on_message(const char *text)
         on_state(m);
     } else if (!strcmp(t, "layout")) {
         on_layout(m);
+    } else if (!strcmp(t, "active")) {
+        const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(m, "s"));
+        hub_lock();
+        int8_t a = -1;
+        for (int i = 0; id && i < s_layout.nscenes; i++)
+            if (!strcmp(s_layout.scenes[i].id, id)) a = i;
+        if (a != s_layout.active) { s_layout.active = a; s_layout.scene_seq++; }
+        hub_unlock();
+    } else if (!strcmp(t, "note")) {
+        hub_lock();
+        copy_str(s_note, sizeof(s_note), cJSON_GetObjectItem(m, "msg"));
+        hub_unlock();
     } else if (!strcmp(t, "identify")) {
         s_identify = (int)num_or(cJSON_GetObjectItem(m, "s"), 10);
     } else if (!strcmp(t, "error")) {
@@ -347,6 +380,30 @@ bool hub_press(const char *entity)
     return send_act(entity, "press", NULL);         // nothing to guess: the hub's state says if it runs
 }
 
+static bool send_scene(const char *type, const char *scene_id)
+{
+    if (!s_ws || !esp_websocket_client_is_connected(s_ws)) return false;
+    char buf[64];
+    const int n = snprintf(buf, sizeof(buf), "{\"t\":\"%s\",\"s\":\"%s\"}", type, scene_id);
+    if (n >= (int)sizeof(buf)) return false;
+    return esp_websocket_client_send_text(s_ws, buf, n, pdMS_TO_TICKS(300)) >= 0;
+}
+
+bool hub_scene_apply(const char *scene_id)
+{
+    if (!send_scene("scene", scene_id)) return false;
+    hub_lock();
+    for (int i = 0; i < s_layout.nscenes; i++)
+        if (!strcmp(s_layout.scenes[i].id, scene_id) && s_layout.active != i) {
+            s_layout.active = i;
+            s_layout.scene_seq++;
+        }
+    hub_unlock();
+    return true;
+}
+
+bool hub_scene_save(const char *scene_id) { return send_scene("scene_save", scene_id); }
+
 // ---------------------------------------------------------------- finding the hub
 
 // Ask the LAN for _hadisplay._tcp. Fills s_url; false if nothing answered.
@@ -435,7 +492,8 @@ static void hub_task(void *arg)
         }
         stop_client();
         hub_lock();
-        s_layout.npages = s_layout.ntiles = 0;
+        s_layout.npages = s_layout.ntiles = s_layout.nscenes = 0;
+        s_layout.active = -1;
         snprintf(s_layout.msg, sizeof(s_layout.msg), "%s", "");
         s_layout.gen++;
         hub_unlock();

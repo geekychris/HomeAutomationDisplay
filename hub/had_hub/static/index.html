@@ -40,12 +40,22 @@ input, select { background: var(--input); border: 1px solid var(--line); border-
 .small { font-size: 12px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
 .dot.on { background: var(--good); }
-#displays { list-style: none; margin: 0; padding: 0; }
-#displays li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
-#displays li:hover { background: var(--chip); }
-#displays li.sel { background: var(--chip); outline: 1px solid var(--line); }
-#displays .who { min-width: 0; }
-#displays .who div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#displays, #scenelist { list-style: none; margin: 0; padding: 0; }
+#displays li, #scenelist li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+#displays li:hover, #scenelist li:hover { background: var(--chip); }
+#displays li.sel, #scenelist li.sel { background: var(--chip); outline: 1px solid var(--line); }
+#displays .who, #scenelist .who { min-width: 0; }
+#displays .who div, #scenelist .who div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+h2.next { margin-top: 20px; }
+.scene-ent { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.scene-ent .ctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.scene-ent input[type=range] { width: 100px; }
+.scene-ent input.num { width: 64px; }
+@media (max-width: 700px) { .scene-ent { grid-template-columns: 22px minmax(0, 1fr) auto; } .scene-ent .ctl { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; } }
+.strip-row { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+.strip-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { font-size: 11px; padding: 0 6px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+.pill.on { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .page { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 12px; }
 .tile { display: grid; grid-template-columns: 22px minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
@@ -115,6 +125,10 @@ footer { padding: 4px 20px 20px; font-size: 12px; color: var(--muted); text-alig
     <h2>Displays</h2>
     <ul id="displays"></ul>
     <p class="small muted" id="nodisplays">No displays yet. Turn one on (it finds the hub by itself), or open a virtual display.</p>
+    <h2 class="next">Scenes</h2>
+    <ul id="scenelist"></ul>
+    <p class="small muted" id="noscenes">A scene sets several lights, switches and thermostats at once. Make one, then put it on a display's scene strip.</p>
+    <button id="newscene" style="margin-top:6px">+ New scene</button>
   </section>
 
   <section class="panel" id="editor"><div class="empty">Pick a display on the left.</div></section>
@@ -165,6 +179,9 @@ const h = (tag, props = {}, ...kids) => {
 
 let info = null, entities = {}, displays = [], selected = null, draft = null, dirty = false;
 let target = 0;          // the page of the selected display that + Add puts tiles on
+// Scenes (kept by the hub, not Home Assistant). With a scene open, the
+// middle panel edits it and + Add in the house list puts entities in it.
+let scenes = [], selScene = null, sdraft = null, sdirty = false;
 
 async function api(method, url, body) {
   const r = await fetch(url.replace(/^\//, ""), { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
@@ -207,10 +224,11 @@ function seen(t) {
 
 function select(id) {
   if (dirty && id !== selected && !confirm("Discard unsaved changes to this display?")) return;
+  if (id && !leaveScene()) return;
   if (id !== selected) target = 0;
   selected = id;
   const d = displays.find(x => x.id === id);
-  draft = d ? structuredClone({ name: d.name, pages: d.pages }) : null;
+  draft = d ? structuredClone({ name: d.name, pages: d.pages, scenes: d.scenes || [] }) : null;
   dirty = false;
   renderDisplays();
   renderEditor();
@@ -220,6 +238,7 @@ function select(id) {
 function change() { dirty = true; $("#save").disabled = false; }
 
 function renderEditor() {
+  if (selScene) { renderSceneEditor(); return; }
   const box = $("#editor");
   const d = displays.find(x => x.id === selected);
   if (!d || !draft) { box.replaceChildren(h("div", { class: "empty" }, "Pick a display on the left.")); updateAddButtons(); return; }
@@ -236,6 +255,7 @@ function renderEditor() {
     h("p", { class: "small muted" },
       `${d.id} · ${d.info?.name || ""} · ${d.info?.ip || "no address yet"} · firmware ${d.info?.fw || "?"} · ${total}/${info.limits.tiles} tiles`),
     ...draft.pages.map((p, pi) => renderPage(p, pi)),
+    renderStrip(),
     h("div", { class: "row", style: "margin-top:12px" },
       h("button", { onclick: addPage, disabled: draft.pages.length >= info.limits.pages }, "+ Page"),
       others.length ? h("select", { onchange: e => { copyFrom(e.target.value); e.target.value = ""; } },
@@ -292,7 +312,9 @@ function movePage(i, by) { const [p] = draft.pages.splice(i, 1); draft.pages.spl
 function copyFrom(id) {
   const src = displays.find(x => x.id === id);
   if (!src) return;
-  draft.pages = structuredClone(src.pages); change(); renderEditor();
+  draft.pages = structuredClone(src.pages);
+  draft.scenes = [...(src.scenes || [])];
+  change(); renderEditor();
 }
 function say(text, err) { const m = $("#msg"); if (m) { m.textContent = text; m.className = "small" + (err ? " err" : ""); } }
 
@@ -534,6 +556,11 @@ function focusSearch() {
 function setTarget(pi) { target = pi; renderEditor(); }
 function renderAddTo() {
   const box = $("#addto");
+  if (selScene && sdraft) {
+    box.replaceChildren("+ Add puts entities in the scene ", h("b", {}, sdraft.name || "(no name)"),
+      h("span", { class: "muted" }, " · lights, fans, covers, switches, locks, thermostats"));
+    return;
+  }
   const d = displays.find(x => x.id === selected);
   if (!d || !draft) { box.replaceChildren(h("span", { class: "muted" }, "Pick a display to add tiles to it.")); return; }
   const dname = draft.name || d.info?.name || d.id;
@@ -547,6 +574,7 @@ function renderAddTo() {
     ` of ${dname}`);
 }
 function addButton(e) {
+  if (selScene && sdraft) return sceneAddButton(e);
   if (!e || !draft || !displays.find(x => x.id === selected)) return null;
   const p = draft.pages[target];
   if (p?.tiles.some(t => t.entity === e.entity_id))
@@ -632,6 +660,216 @@ function levelOf(e) {
   return v >= t[1] ? 3 : v >= t[0] ? 2 : 1;
 }
 
+// ------------------------------------------------------------ scenes
+const sceneName = id => scenes.find(x => x.id === id)?.name || id;
+const SCENE_KINDS = ["light", "switch", "climate"];
+const CLIMATE_MODES = ["off", "heat", "cool", "auto", "heat_cool", "dry", "fan_only"];
+const isOnState = st => ["on", "open", "opening", "locked"].includes(st);
+
+// The entity's level now (brightness, fan speed, cover position), or null if it has none to set.
+function currentLevel(e) {
+  const a = e.attributes;
+  if (e.domain === "light") return (a.supported_color_modes || []).some(m => m !== "onoff") || a.brightness !== undefined ? Math.round((a.brightness || 0) * 100 / 255) : null;
+  if (e.domain === "fan") return (a.supported_features & 1) ? (a.percentage || 0) : null;
+  if (e.domain === "cover") return (a.supported_features & 4) ? (a.current_position ?? 0) : null;
+  return null;
+}
+// How the entity is now, as scene values (the hub's scenes.capture does the same).
+function captureValues(e) {
+  if (!e || ["unavailable", "unknown"].includes(e.state) || !SCENE_KINDS.includes(e.kind)) return null;
+  if (e.kind === "climate") return e.state === "off" || e.attributes.temperature == null ? { mode: e.state } : { mode: e.state, target: e.attributes.temperature };
+  const on = isOnState(e.state), lv = currentLevel(e);
+  return on && lv !== null ? { on, level: Math.max(1, lv) } : { on };
+}
+const onWords = e => e?.domain === "cover" ? ["Open", "Closed"] : e?.domain === "lock" ? ["Locked", "Unlocked"] : ["On", "Off"];
+
+function renderSceneList() {
+  $("#scenelist").replaceChildren(...scenes.map(sc => h("li", { class: sc.id === selScene ? "sel" : "", onclick: () => openScene(sc.id, true) },
+    h("span", { class: "dot" + (sc.on ? " on" : ""), title: sc.on ? "on: everything is as the scene says" : "not on" }),
+    h("div", { class: "who" },
+      h("div", {}, sc.name, sc.locked ? " 🔒" : ""),
+      h("div", { class: "small muted" }, `${Object.keys(sc.entities).length} entities · ${sc.displays.length ? "on " + sc.displays.length + " display" + (sc.displays.length > 1 ? "s" : "") : "on no display"}`)))));
+  $("#noscenes").hidden = scenes.length > 0;
+  $("#newscene").disabled = scenes.length >= info.limits.scenes;
+}
+
+// Leaving the open scene (for a display or another scene). False if the user wants to stay.
+function leaveScene() {
+  if (!selScene) return true;
+  if (sdirty && !confirm("Discard unsaved changes to this scene?")) return false;
+  selScene = null; sdraft = null; sdirty = false;
+  renderSceneList();
+  return true;
+}
+
+function openScene(id, fromClick) {
+  if (fromClick) {
+    if (id === selScene) return;
+    if (dirty && !confirm("Discard unsaved changes to this display?")) return;
+    if (!leaveScene()) return;
+    selected = null; draft = null; dirty = false;
+    renderDisplays();
+  }
+  const sc = scenes.find(x => x.id === id);
+  if (!sc) return;
+  selScene = id;
+  sdraft = structuredClone({ name: sc.name, entities: sc.entities, locked: sc.locked });
+  sdirty = false;
+  renderSceneList();
+  renderEditor();
+  updateAddButtons();
+}
+
+async function newScene() {
+  let n = 1, name = "New scene";
+  while (scenes.some(x => x.name === name)) name = `New scene ${++n}`;
+  try {
+    const { id } = await api("POST", "/api/scenes", { name, entities: {} });
+    scenes = await api("GET", "/api/scenes");
+    openScene(id, true);
+    $("#editor input")?.select();
+  } catch (err) { alert(err.message); }
+}
+
+function schange() { sdirty = true; const b = $("#save"); if (b) b.disabled = false; }
+
+function renderSceneEditor() {
+  const box = $("#editor");
+  const sc = scenes.find(x => x.id === selScene);
+  if (!sc || !sdraft) { box.replaceChildren(h("div", { class: "empty" }, "Pick a display or a scene on the left.")); return; }
+  const ids = Object.keys(sdraft.entities);
+  const usedOn = sc.displays.map(id => { const d = displays.find(x => x.id === id); return d?.name || d?.info?.name || id; });
+  box.replaceChildren(
+    h("h2", {}, "Scene"),
+    h("div", { class: "row" },
+      h("input", { value: sdraft.name, maxlength: info.limits.scene_name, placeholder: "Name, as shown on the display", style: "flex:1;min-width:160px",
+        oninput: e => { sdraft.name = e.target.value; schange(); renderAddTo(); } }),
+      h("button", { onclick: applyScene, title: "Set everything as the scene says, now" }, "Apply now"),
+      h("button", { onclick: deleteScene, title: "Delete this scene, and take it off every display" }, "Delete")),
+    h("div", { class: "opts-row", style: "margin-top:8px" },
+      h("label", { title: "Displays can still apply it, but a long-press there will not save over it" },
+        h("input", { type: "checkbox", checked: sdraft.locked, onchange: e => { sdraft.locked = e.target.checked; schange(); } }),
+        "Locked: only change it here, not from a display")),
+    h("p", { class: "small muted" },
+      h("span", { class: "pill" + (sc.on ? " on" : "") }, sc.on ? "on now" : "not on"), " ",
+      usedOn.length ? `On the scene strip of ${usedOn.join(", ")}.` : "Not on any display yet: add it to one under Scene strip in the display's layout."),
+    ...(ids.length ? [] : [h("p", { class: "empty" }, "Empty. Use + Add in the house list to put lights, switches and thermostats in this scene; each comes in as it is now.")]),
+    ...ids.map(eid => renderSceneEntity(eid)),
+    h("div", { class: "row", style: "margin-top:12px" },
+      h("button", { onclick: captureScene, disabled: !ids.length, title: "Set every entity in the scene to how it is in the house right now" }, "Capture current state"),
+      h("span", { style: "flex:1" }),
+      h("span", { id: "msg", class: "small" }),
+      h("button", { id: "save", class: "primary", onclick: saveScene, disabled: !sdirty }, "Save scene")));
+  renderAddTo();
+}
+
+function renderSceneEntity(eid) {
+  const e = entities[eid], v = sdraft.entities[eid];
+  let ctl;
+  if (e?.kind === "climate" || eid.startsWith("climate.")) {
+    const modes = e?.attributes.hvac_modes?.length ? e.attributes.hvac_modes : CLIMATE_MODES;
+    ctl = h("div", { class: "ctl" },
+      h("select", { onchange: ev => { v.mode = ev.target.value; if (v.mode === "off") delete v.target; else if (v.target == null) v.target = e?.attributes.temperature ?? 20; schange(); renderEditor(); } },
+        ...modes.map(m => h("option", { value: m, selected: m === v.mode }, m))),
+      v.mode !== "off" ? h("input", { class: "num", type: "number", step: e?.attributes.target_temp_step || 0.5, value: v.target ?? "",
+        title: "Target temperature", oninput: ev => { v.target = ev.target.value === "" ? undefined : +ev.target.value; schange(); } }) : null,
+      v.mode !== "off" ? h("span", { class: "small muted" }, "°") : null);
+  } else {
+    const [onW, offW] = onWords(e);
+    const hasLevel = e && currentLevel(e) !== null;
+    const pct = h("span", { class: "small muted val", style: "min-width:3em;text-align:right" }, v.level != null ? `${v.level}%` : "");
+    ctl = h("div", { class: "ctl" },
+      v.on && hasLevel ? h("input", { type: "range", min: 1, max: 100, value: v.level ?? 100,
+        oninput: ev => { v.level = +ev.target.value; pct.textContent = `${v.level}%`; schange(); } }) : null,
+      v.on && hasLevel ? pct : null,
+      h("button", { class: "toggle" + (v.on ? " on" : ""), onclick: () => {
+        v.on = !v.on;
+        if (!v.on) delete v.level; else if (hasLevel && v.level == null) v.level = 100;
+        schange(); renderEditor();
+      } }, v.on ? onW : offW));
+  }
+  return h("div", { class: "scene-ent" },
+    h("span", { class: "kind", title: e?.domain }, iconOf(e)),
+    h("div", { class: "ent" },
+      h("div", {}, nameOf(eid), e?.attributes.area ? h("span", { class: "muted" }, ` · ${e.attributes.area}`) : null),
+      h("div", { class: "small muted", "data-state": eid }, `${eid} · ${describe(e)}`)),
+    ctl,
+    h("button", { class: "icon", title: "Take it out of the scene", onclick: () => { delete sdraft.entities[eid]; schange(); renderEditor(); updateAddButtons(); } }, "✕"));
+}
+
+function sceneAddButton(e) {
+  if (!e) return null;
+  if (!SCENE_KINDS.includes(e.kind)) return null;
+  if (sdraft.entities[e.entity_id])
+    return h("button", { class: "add done", title: "In the scene. Click to take it out.",
+      onclick: () => { delete sdraft.entities[e.entity_id]; schange(); renderEditor(); updateAddButtons(); } }, "✓ Added");
+  const v = captureValues(e);
+  const full = Object.keys(sdraft.entities).length >= info.limits.scene_entities;
+  const why = full ? `A scene holds at most ${info.limits.scene_entities} entities` : !v ? "Unavailable right now" : "";
+  return h("button", { class: "add", disabled: !!why, title: why || "Add it to the scene as it is now",
+    onclick: () => { sdraft.entities[e.entity_id] = v; schange(); renderEditor(); updateAddButtons(); } }, "+ Add");
+}
+
+async function saveScene() {
+  try {
+    await api("PUT", `/api/scenes/${selScene}`, sdraft);
+    sdirty = false;
+    say("Saved. Displays showing it have it.");
+    const b = $("#save"); if (b) b.disabled = true;
+    return true;
+  } catch (err) { say(err.message, true); return false; }
+}
+async function applyScene() {
+  if (sdirty && !(await saveScene())) return;
+  try {
+    const r = await api("POST", `/api/scenes/${selScene}/apply`);
+    say(r.ok ? "Applied." : `Applied, but: ${r.err}`, !r.ok);
+  } catch (err) { say(err.message, true); }
+}
+async function captureScene() {
+  if (sdirty && !(await saveScene())) return;
+  try {
+    const r = await api("POST", `/api/scenes/${selScene}/capture`);
+    sdirty = false;
+    say(r.skipped.length ? `Captured; ${r.skipped.length} unavailable kept their old values.` : "Captured the house as it is now.");
+  } catch (err) { say(err.message, true); }
+}
+async function deleteScene() {
+  const sc = scenes.find(x => x.id === selScene);
+  if (!confirm(`Delete the scene “${sc?.name}”?` + (sc?.displays.length ? ` It comes off ${sc.displays.length} display(s).` : ""))) return;
+  try {
+    await api("DELETE", `/api/scenes/${selScene}`);
+    selScene = null; sdraft = null; sdirty = false;
+    renderEditor(); renderSceneList(); updateAddButtons();
+  } catch (err) { say(err.message, true); }
+}
+
+// A display's scene strip, in its layout editor.
+function renderStrip() {
+  const ids = draft.scenes || (draft.scenes = []);
+  const max = info.limits.display_scenes;
+  const free = scenes.filter(sc => !ids.includes(sc.id));
+  return h("div", { class: "page" },
+    h("div", { class: "row" }, h("b", {}, "Scene strip"),
+      h("span", { class: "small muted" }, `${ids.length}/${max} · along the bottom of every page. Tap applies; long-press saves the room into the scene (unless it is locked).`)),
+    ...ids.map((sid, i) => {
+      const sc = scenes.find(x => x.id === sid);
+      return h("div", { class: "strip-row" },
+        h("span", { class: "dot" + (sc?.on ? " on" : "") }),
+        h("span", { class: "who" }, sc ? sc.name : sid, sc?.locked ? " 🔒" : "",
+          h("span", { class: "small muted" }, sc ? ` · ${Object.keys(sc.entities).length} entities` : " · deleted")),
+        h("button", { class: "linkish", onclick: () => openScene(sid, true) }, "Edit"),
+        h("button", { class: "icon", title: "Move left", disabled: i === 0, onclick: () => { [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]]; change(); renderEditor(); } }, "↑"),
+        h("button", { class: "icon", title: "Take it off this display", onclick: () => { ids.splice(i, 1); change(); renderEditor(); } }, "✕"));
+    }),
+    h("div", { class: "row", style: "margin-top:8px" },
+      scenes.length
+        ? h("select", { disabled: ids.length >= max || !free.length, onchange: ev => { if (ev.target.value) { ids.push(ev.target.value); change(); renderEditor(); } } },
+            h("option", { value: "" }, ids.length >= max ? `Strip full (${max})` : free.length ? "+ Add a scene…" : "All scenes are on it"),
+            ...free.map(sc => h("option", { value: sc.id }, sc.name)))
+        : h("span", { class: "small muted" }, "No scenes yet: make one under Scenes on the left.")));
+}
+
 // ------------------------------------------------------------ live feed
 function connectLive() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${BASE}api/live`);
@@ -642,6 +880,12 @@ function connectLive() {
       if (selected && !displays.find(d => d.id === selected)) { selected = null; draft = null; dirty = false; }
       renderDisplays();
       if (!dirty) select(selected);       // with unsaved edits, leave the editor alone
+    } else if (m.t === "scenes") {
+      scenes = m.scenes;
+      if (selScene && !scenes.find(x => x.id === selScene)) { selScene = null; sdraft = null; sdirty = false; renderEditor(); }
+      else if (selScene && !sdirty) openScene(selScene);
+      else if (!selScene && draft && !dirty) renderEditor();     // strip names and on/off
+      renderSceneList();
     } else if (m.t === "entity") {
       const isNew = !entities[m.entity.entity_id];
       entities[m.entity.entity_id] = m.entity;
@@ -680,6 +924,7 @@ async function loadEntities() {
     if (ev.key === "/" && !ev.target.closest("input, textarea, select")) { ev.preventDefault(); focusSearch(); }
   });
   renderChips();
+  $("#newscene").addEventListener("click", newScene);
   await loadEntities();
   connectLive();
   // Home Assistant can come and go (restarts, updates): keep the banner true,
@@ -691,7 +936,7 @@ async function loadEntities() {
     if (info.status.connected && !was) loadEntities();
   }, 10000);
 })();
-window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
+window.addEventListener("beforeunload", e => { if (dirty || sdirty) e.preventDefault(); });
 </script>
 </body>
 </html>
